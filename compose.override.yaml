@@ -1,0 +1,13 @@
+services:
+  api:
+    volumes:
+      - ./app:/app/app
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+    environment:
+      UVICORN_WORKERS: "1"
+      UVICORN_RELOAD: "true"
+
+  db:
+    ports:
+      - "5432:5432"
