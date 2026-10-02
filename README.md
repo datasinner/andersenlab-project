@@ -5,8 +5,8 @@ every due the vessel must pay at that port, with the formula and tariff citation
 figure. The LLM finds and interprets the rules in the document; a deterministic engine does the
 arithmetic. No tariff data is hard-coded.
 
-> **Status:** under construction. Phases 0–3 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
-> (skeleton, data model, rule DSL and calculation engine, OpenAI client layer). The architecture is described in
+> **Status:** under construction. Phases 0–4 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
+> (skeleton, data model, rule DSL and calculation engine, OpenAI client layer, PDF ingestion). The architecture is described in
 > [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
@@ -16,10 +16,12 @@ cp .env.example .env    # set OPENAI_API_KEY, or LLM_PROVIDER=fake to run offlin
 docker compose up --build
 ```
 
-The API runs behind Nginx on `http://localhost:8080`:
+On start the container runs migrations, then ingests every PDF in `data/tariffs/` (the bundled
+TNPA Tariff Book 2024/25; already-ingested files are skipped), then serves the API behind Nginx on
+`http://localhost:8080`:
 
 - `GET /health`: process is alive
-- `GET /ready`: database is reachable, plus the number of ingested tariff documents
+- `GET /ready`: database is reachable, plus the number of ingested (`ready`) tariff documents
 - `GET /docs`: Swagger UI, used to upload tariff PDFs and run calculations
 
 `docker compose down -v` removes everything, including the database volume.
@@ -54,3 +56,12 @@ uv run python scripts/calculate.py --rules <rules dir> --vessel <profile.json> \
 `make smoke` makes one real Structured Outputs call (extracting a rule from an invented tariff
 excerpt, then pricing it with the engine) and one embedding call, using `OPENAI_API_KEY` from
 `.env`. `uv run python scripts/llm_smoke.py --fake` does the same offline with the fake clients.
+
+### Ingesting tariff documents
+
+`make ingest` (or `uv run python scripts/ingest.py --file <pdf>`) parses a tariff PDF into a
+section tree and retrieval chunks (tables kept whole, running headers and page numbers removed,
+two-up landscape sheets split into their printed pages), embeds the chunks, and reads the
+document's profile (issuer, ports, currency, VAT, validity period) with one LLM call. Ingestion is
+idempotent by file checksum; a failed attempt is recorded on the document and retried on the next
+run.

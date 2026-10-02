@@ -11,6 +11,7 @@ dependencies = [
     "pgvector==0.5.0",
     "pydantic==2.13.5",
     "pydantic-settings==2.15.0",
+    "pymupdf==1.28.2",
     "sqlalchemy[asyncio]==2.1.1",
     "structlog==26.1.0",
     "uvicorn[standard]==0.54.0",
@@ -43,6 +44,11 @@ asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
 # Lets tests import shared helpers as tests.unit.rule_builders.
 pythonpath = ["."]
+filterwarnings = [
+    # Emitted by PyMuPDF's SWIG bindings on import; nothing to act on.
+    "ignore:builtin type Swig:DeprecationWarning",
+    "ignore:builtin type swigvarlink:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py312"

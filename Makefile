@@ -1,4 +1,4 @@
-.PHONY: up down test test-unit coverage lint format migrate calculate smoke logs
+.PHONY: up down test test-unit coverage lint format migrate ingest calculate smoke logs
 
 up:
 	docker compose up --build
@@ -14,7 +14,7 @@ test-unit:
 	uv run pytest tests/unit
 
 coverage:
-	uv run pytest tests/unit --cov=app/rules --cov=app/domain --cov=app/llm --cov-branch --cov-report=term-missing
+	uv run pytest tests/unit --cov=app/rules --cov=app/domain --cov=app/llm --cov=app/ingestion --cov-branch --cov-report=term-missing
 
 lint:
 	uv run ruff check .
@@ -26,6 +26,10 @@ format:
 
 migrate:
 	uv run alembic upgrade head
+
+# Ingest every PDF in data/tariffs (idempotent).
+ingest:
+	uv run python scripts/ingest.py --dir data/tariffs
 
 # Price SUDESTADA at Durban with the hand-written golden rules (no LLM, no DB).
 calculate:

@@ -130,7 +130,8 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │   │   ├── engine.py              # deterministic evaluator → LineItem + trace (§6.3)
 │   │   └── grounding.py           # checks every number in a rule against its cited text
 │   ├── ingestion/
-│   │   ├── parser.py              # PDF → pages, text blocks (with font info), tables
+│   │   ├── parser.py              # PDF → logical pages: text lines (with font info), tables
+│   │   ├── cleaner.py             # running headers/footers, page labels, dot leaders
 │   │   ├── structure.py           # heading detection → section tree
 │   │   ├── chunker.py             # section-aware chunks, atomic tables, breadcrumbs
 │   │   ├── profile.py             # LLM: document profile (authority, ports, currency, VAT, validity)

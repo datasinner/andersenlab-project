@@ -4,6 +4,8 @@ services:
       - ./app:/app/app
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
+      - ./scripts:/app/scripts
+      - ./data:/app/data
     environment:
       UVICORN_WORKERS: "1"
       UVICORN_RELOAD: "true"
