@@ -1,0 +1,49 @@
+{
+  "charge_id": "berthing_services",
+  "name": "Berthing services",
+  "section_refs": ["3.8"],
+  "port_key": "Durban",
+  "currency": "ZAR",
+  "payer": "vessel",
+  "status": "priced",
+  "components": [
+    {"kind": "fixed", "id": "basic_fee", "label": "Basic fee per service", "amount": "2  801.91"},
+    {
+      "kind": "per_unit",
+      "id": "tonnage_fee",
+      "label": "Plus per 100 tons or part thereof",
+      "rate": "13.68",
+      "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil"}
+    }
+  ],
+  "multiplier": {"basis": "num_services", "unit_size": "1", "rounding": "ceil"},
+  "adjustments": [
+    {
+      "id": "outside_working_hours",
+      "kind": "surcharge",
+      "description": "Service terminates or commences outside ordinary working hours",
+      "percent": "50",
+      "when": [{"fact": "berthing_outside_ordinary_working_hours", "op": "eq", "value": true}],
+      "exclusive_group": "berthing_surcharge",
+      "citation": {"chunk_id": 381, "section_ref": "3.8", "page": 9, "quote": "A surcharge of 50% will be payable in the following instances"}
+    },
+    {
+      "id": "late_arrival_or_departure",
+      "kind": "surcharge",
+      "description": "Vessel arrives or departs 30 minutes or more after the notified time",
+      "percent": "50",
+      "when": [{"fact": "arrived_or_departed_30_minutes_late", "op": "eq", "value": true}],
+      "exclusive_group": "berthing_surcharge",
+      "citation": {"chunk_id": 381, "section_ref": "3.8", "page": 9, "quote": "If the vessel arrives or departs 30 minutes or more after the notified time"}
+    }
+  ],
+  "facts": [
+    {"name": "berthing_outside_ordinary_working_hours", "type": "bool", "description": "Berthing service terminates or commences outside the port's ordinary working hours", "default_value": false},
+    {"name": "arrived_or_departed_30_minutes_late", "type": "bool", "description": "Vessel arrived or departed 30 minutes or more after the notified time", "default_value": false}
+  ],
+  "citations": [
+    {"chunk_id": 381, "section_ref": "3.8", "page": 9, "quote": "berthing and unberthing will be charged as two separate services"},
+    {"chunk_id": 381, "section_ref": "3.8", "page": 9, "quote": "Basic fee<br>Plus<br>Per 100 tons or<br>part thereof"}
+  ],
+  "notes": ["Durban is not named in the berthing table, so the 'Other Ports' column applies."]
+}

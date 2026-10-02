@@ -1,0 +1,119 @@
+{
+  "charge_id": "port_dues",
+  "name": "Port dues",
+  "section_refs": ["4.1", "4.1.1"],
+  "port_key": "Durban",
+  "currency": "ZAR",
+  "payer": "vessel",
+  "status": "priced",
+  "exemptions": [
+    {
+      "description": "SAPS, SANDF, SAMSA and SA medical & research vessels",
+      "when": [{"fact": "is_state_or_research_vessel", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 412, "section_ref": "4.1.1", "page": 11, "quote": "Vessels belonging to SAMSA"}
+    },
+    {
+      "description": "Vessels calling for the second time, returning from anchorage at the order of the port",
+      "when": [{"fact": "returning_from_anchorage_at_port_order", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 412, "section_ref": "4.1.1", "page": 11, "quote": "Vessels calling for the second time, returning from anchorage at the order of the port"}
+    }
+  ],
+  "components": [
+    {
+      "kind": "per_unit",
+      "id": "basic_fee",
+      "label": "Basic fee per 100 tons or part thereof",
+      "rate": "192.73",
+      "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil"}
+    },
+    {
+      "kind": "per_unit",
+      "id": "incremental_fee",
+      "label": "Per 100 tons or part thereof per 24 hour period, pro rata",
+      "rate": "57.79",
+      "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil"},
+      "per_time": {"basis": "time_in_port_hours", "unit_size": "24", "rounding": "pro_rata"}
+    }
+  ],
+  "adjustments": [
+    {
+      "id": "not_cargo_working",
+      "kind": "reduction",
+      "description": "Vessel not engaged in cargo working (first 30 days only)",
+      "percent": "35",
+      "when": [{"fact": "is_cargo_working", "op": "eq", "value": false}],
+      "exclusive_group": "base_reduction",
+      "citation": {"chunk_id": 412, "section_ref": "4.1.1", "page": 11, "quote": "A reduction of 35% will be allowed in the following instances"}
+    },
+    {
+      "id": "bona_fide_coaster",
+      "kind": "reduction",
+      "description": "Bona fide coaster",
+      "percent": "35",
+      "when": [{"fact": "is_bona_fide_coaster", "op": "eq", "value": true}],
+      "exclusive_group": "base_reduction"
+    },
+    {
+      "id": "passenger_vessel",
+      "kind": "reduction",
+      "description": "Passenger vessel",
+      "percent": "35",
+      "when": [{"fact": "is_passenger_vessel", "op": "eq", "value": true}],
+      "exclusive_group": "base_reduction"
+    },
+    {
+      "id": "bunkers_stores_water_only",
+      "kind": "reduction",
+      "description": "Call solely to take on bunkers, stores and/or water, with a stay of at most 48 hours",
+      "percent": "60",
+      "when": [
+        {"fact": "calling_solely_for_bunkers_stores_or_water", "op": "eq", "value": true},
+        {"fact": "time_in_port_hours", "op": "le", "value": "48"}
+      ],
+      "exclusive_group": "base_reduction",
+      "citation": {"chunk_id": 412, "section_ref": "4.1.1", "page": 11, "quote": "A reduction of 60% will be allowed to vessels calling for the sole purpose of taking on"}
+    },
+    {
+      "id": "long_idle_stay",
+      "kind": "surcharge",
+      "description": "In port longer than 30 days without cargo working",
+      "percent": "20",
+      "applies_to": ["incremental_fee"],
+      "when": [
+        {"fact": "time_in_port_days", "op": "gt", "value": "30"},
+        {"fact": "is_cargo_working", "op": "eq", "value": false}
+      ],
+      "citation": {"chunk_id": 412, "section_ref": "4.1.1", "page": 11, "quote": "will be liable for a 20% surcharge on the incremental fee of port dues"}
+    },
+    {
+      "id": "certified_tanker",
+      "kind": "reduction",
+      "description": "Double-hulled, segregated-ballast or Green Award liquid bulk tanker",
+      "percent": "10",
+      "when": [{"fact": "is_certified_green_tanker", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 412, "section_ref": "4.1.1", "page": 11, "quote": "A reduction of 10% will be allowed to certified double hulled liquid bulk tankers"}
+    },
+    {
+      "id": "short_stay",
+      "kind": "reduction",
+      "description": "Vessel remains in port for less than 12 hours",
+      "percent": "15",
+      "when": [{"fact": "time_in_port_hours", "op": "lt", "value": "12"}],
+      "citation": {"chunk_id": 412, "section_ref": "4.1.1", "page": 11, "quote": "A vessel remaining in port for less than 12 hours will be allowed a reduction of 15%"}
+    }
+  ],
+  "facts": [
+    {"name": "is_cargo_working", "type": "bool", "description": "Vessel loads or discharges cargo during the call"},
+    {"name": "is_bona_fide_coaster", "type": "bool", "description": "Vessel holds bona fide coaster status", "default_value": false},
+    {"name": "is_passenger_vessel", "type": "bool", "description": "Vessel carries more than 12 passengers", "default_value": false},
+    {"name": "calling_solely_for_bunkers_stores_or_water", "type": "bool", "description": "Vessel calls only to take on bunkers, stores and/or water", "default_value": false},
+    {"name": "is_certified_green_tanker", "type": "bool", "description": "Certified double-hulled, segregated-ballast or Green Award liquid bulk tanker", "default_value": false},
+    {"name": "is_state_or_research_vessel", "type": "bool", "description": "Vessel belongs to SAPS, SANDF or SAMSA, or is an SA medical & research vessel", "default_value": false},
+    {"name": "returning_from_anchorage_at_port_order", "type": "bool", "description": "Vessel is calling for the second time, returning from anchorage at the order of the port", "default_value": false}
+  ],
+  "citations": [
+    {"chunk_id": 411, "section_ref": "4.1.1", "page": 11, "quote": "Basic fee per 100 tons or part thereof"},
+    {"chunk_id": 411, "section_ref": "4.1.1", "page": 11, "quote": "per 100 tons or part thereof per 24 hour period, a part of a 24 hour period being applied pro rata"}
+  ],
+  "notes": ["Charged from passing the port entrance inwards until passing it outwards."]
+}

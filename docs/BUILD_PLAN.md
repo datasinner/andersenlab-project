@@ -273,21 +273,25 @@ class Units(BaseModel):      # how many billable units of a quantity
     rounding: Rounding
     above: Decimal = 0       # count only the part above this value ("per 100 tons above 50 000")
 
-class FixedFee(BaseModel):    kind: Literal["fixed"];    id; label; amount
-class PerUnitFee(BaseModel):  kind: Literal["per_unit"]; id; label; rate; units: Units
+# Every component has: id; label; when: list[Condition]  (counts only if all hold, e.g. a
+# different rate for vessels at their registered port)
+class FixedFee(BaseModel):    kind: Literal["fixed"];    amount
+class PerUnitFee(BaseModel):  kind: Literal["per_unit"]; rate; units: Units
                               per_time: Units | None     # rate × units × time units
-class Band(BaseModel):        lower; upper: Decimal | None; base_fee; increment: PerUnitFee | None
-class BandedFee(BaseModel):   kind: Literal["banded"];   id; label; basis; bands: list[Band]   # exactly one band applies
+class Increment(BaseModel):   rate; units: Units
+class Band(BaseModel):        lower; upper: Decimal | None; base_fee; increment: Increment | None   # lower <= q <= upper
+class BandedFee(BaseModel):   kind: Literal["banded"];   basis; bands: list[Band]   # first listed band containing q applies
 class Tier(BaseModel):        up_to: Decimal | None; rate; unit_size; rounding
-class TieredFee(BaseModel):   kind: Literal["tiered"];   id; label; basis; tiers: list[Tier]   # marginal: each slice at its own rate
+class TieredFee(BaseModel):   kind: Literal["tiered"];   basis; tiers: list[Tier]   # marginal: each slice at its own rate
 Component = Annotated[FixedFee | PerUnitFee | BandedFee | TieredFee, Field(discriminator="kind")]
 
 class Condition(BaseModel):   fact: str; op: Literal["eq","ne","lt","le","gt","ge","in"]; value
-class Adjustment(BaseModel):  id; kind: Literal["reduction","surcharge"]; percent
+class Adjustment(BaseModel):  id; kind: Literal["reduction","surcharge"]; description; percent
                               applies_to: list[str] | Literal["all"]   # component ids
                               when: list[Condition]; exclusive_group: str | None; citation
 class Exemption(BaseModel):   description; when: list[Condition]; citation
-class FactSpec(BaseModel):    name; type: Literal["bool","number","text"]; description; default_assumption
+class FactSpec(BaseModel):    name; type: Literal["bool","number","text"]; description
+                              default_value: bool | str | None   # assumed when the call doesn't say; None = must resolve
 class Citation(BaseModel):    chunk_id; section_ref; page; quote
 
 class ChargeRule(BaseModel):

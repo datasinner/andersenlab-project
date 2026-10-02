@@ -1,0 +1,55 @@
+{
+  "charge_id": "light_dues",
+  "name": "Light dues",
+  "section_refs": ["1.1", "1.1.1"],
+  "port_key": "Durban",
+  "currency": "ZAR",
+  "payer": "vessel",
+  "status": "priced",
+  "exemptions": [
+    {
+      "description": "SAPS, SANDF, SAMSA and SA medical & research vessels",
+      "when": [{"fact": "is_state_or_research_vessel", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 102, "section_ref": "1.1.1", "page": 5, "quote": "A reduction of 100% would be allowed in the following instances"}
+    },
+    {
+      "description": "Non-self-propelled small and pleasure vessels not used for gain",
+      "when": [{"fact": "is_non_self_propelled_small_or_pleasure_vessel_not_for_gain", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 102, "section_ref": "1.1.1", "page": 5, "quote": "Non-selfpropelled small and pleasure vessels not used for gain"}
+    },
+    {
+      "description": "Vessels that remain at the anchorage outside the port (unless moored at a single buoy mooring)",
+      "when": [{"fact": "remains_at_outer_anchorage", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 102, "section_ref": "1.1.1", "page": 5, "quote": "Vessels that remain at the anchorage outside the port"}
+    }
+  ],
+  "components": [
+    {
+      "kind": "per_unit",
+      "id": "licensed_vessels_at_registered_port",
+      "label": "Self-propelled vessels licensed by DEAT, at their registered port: per metre of LOA",
+      "when": [{"fact": "is_licensed_vessel_at_registered_port", "op": "eq", "value": true}],
+      "rate": "24.64",
+      "units": {"basis": "loa_m", "unit_size": "1", "rounding": "ceil"}
+    },
+    {
+      "kind": "per_unit",
+      "id": "all_other_vessels",
+      "label": "All other vessels: per 100 tons or part thereof",
+      "when": [{"fact": "is_licensed_vessel_at_registered_port", "op": "eq", "value": false}],
+      "rate": "117.08",
+      "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil"}
+    }
+  ],
+  "facts": [
+    {"name": "is_licensed_vessel_at_registered_port", "type": "bool", "description": "Self-propelled vessel licensed by the Department of Environmental Affairs and Tourism, at its registered port", "default_value": false},
+    {"name": "is_state_or_research_vessel", "type": "bool", "description": "Vessel belongs to SAPS, SANDF or SAMSA, or is an SA medical & research vessel", "default_value": false},
+    {"name": "is_non_self_propelled_small_or_pleasure_vessel_not_for_gain", "type": "bool", "description": "Non-self-propelled small or pleasure vessel not used for gain", "default_value": false},
+    {"name": "remains_at_outer_anchorage", "type": "bool", "description": "Vessel remains at the anchorage outside the port", "default_value": false}
+  ],
+  "citations": [
+    {"chunk_id": 101, "section_ref": "1.1.1", "page": 5, "quote": "Per 100 tons or part thereof"},
+    {"chunk_id": 101, "section_ref": "1.1.1", "page": 5, "quote": "Per metre or part thereof of the length overall"}
+  ],
+  "notes": ["Raised at the first South African port of call and valid until the vessel leaves the last South African port of call (60-day limit)."]
+}

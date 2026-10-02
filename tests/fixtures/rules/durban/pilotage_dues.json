@@ -1,0 +1,61 @@
+{
+  "charge_id": "pilotage_dues",
+  "name": "Pilotage services",
+  "section_refs": ["3.3"],
+  "port_key": "Durban",
+  "currency": "ZAR",
+  "payer": "vessel",
+  "status": "priced",
+  "exemptions": [
+    {
+      "description": "SAPS and SANDF vessels, unless pilotage is performed on request",
+      "when": [
+        {"fact": "is_saps_or_sandf_vessel", "op": "eq", "value": true},
+        {"fact": "pilotage_requested", "op": "eq", "value": false}
+      ],
+      "citation": {"chunk_id": 302, "section_ref": "3.3", "page": 7, "quote": "Vessels belonging to the SAPS and SANDF except if pilotage services are performed on request"}
+    }
+  ],
+  "components": [
+    {"kind": "fixed", "id": "basic_fee", "label": "Basic fee per service (normal entering or leaving the port)", "amount": "18 608.61"},
+    {
+      "kind": "per_unit",
+      "id": "tonnage_fee",
+      "label": "Per 100 tons or part thereof",
+      "rate": "9.72",
+      "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil"}
+    }
+  ],
+  "multiplier": {"basis": "num_services", "unit_size": "1", "rounding": "ceil"},
+  "adjustments": [
+    {
+      "id": "outside_working_hours",
+      "kind": "surcharge",
+      "description": "Pilotage service terminates or commences outside ordinary working hours",
+      "percent": "50",
+      "when": [{"fact": "pilotage_outside_ordinary_working_hours", "op": "eq", "value": true}],
+      "exclusive_group": "pilotage_surcharge",
+      "citation": {"chunk_id": 302, "section_ref": "3.3", "page": 7, "quote": "A surcharge of 50% is payable at all ports in the following instances"}
+    },
+    {
+      "id": "vessel_not_ready",
+      "kind": "surcharge",
+      "description": "Vessel not ready to move 30 minutes after the notified time or after the pilot boarded",
+      "percent": "50",
+      "when": [{"fact": "vessel_not_ready_after_notified_time", "op": "eq", "value": true}],
+      "exclusive_group": "pilotage_surcharge",
+      "citation": {"chunk_id": 302, "section_ref": "3.3", "page": 7, "quote": "If the vessel is not ready to be moved 30 minutes after the notified time"}
+    }
+  ],
+  "facts": [
+    {"name": "is_saps_or_sandf_vessel", "type": "bool", "description": "Vessel belongs to the SAPS or SANDF", "default_value": false},
+    {"name": "pilotage_requested", "type": "bool", "description": "Pilotage was performed at the vessel's request", "default_value": true},
+    {"name": "pilotage_outside_ordinary_working_hours", "type": "bool", "description": "Pilotage service terminates or commences outside the port's ordinary working hours", "default_value": false},
+    {"name": "vessel_not_ready_after_notified_time", "type": "bool", "description": "Vessel was not ready to be moved 30 minutes after the notified time", "default_value": false}
+  ],
+  "citations": [
+    {"chunk_id": 301, "section_ref": "3.3", "page": 7, "quote": "Pilotage is compulsory at the Ports of Richards Bay, Durban"},
+    {"chunk_id": 301, "section_ref": "3.3", "page": 7, "quote": "Per 100 tons or<br>part thereof"}
+  ],
+  "notes": ["Durban column of the pilotage table; charged per service (entering and leaving are separate services)."]
+}

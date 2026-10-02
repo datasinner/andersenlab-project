@@ -1,0 +1,64 @@
+{
+  "charge_id": "towage_dues",
+  "name": "Tugs/vessel assistance and/or attendance",
+  "section_refs": ["3.6"],
+  "port_key": "Durban",
+  "currency": "ZAR",
+  "payer": "vessel",
+  "status": "priced",
+  "components": [
+    {
+      "kind": "banded",
+      "id": "towage_fee",
+      "label": "Fee per service by vessel tonnage",
+      "basis": "gross_tonnage",
+      "bands": [
+        {"lower": "0", "upper": "2 000", "base_fee": "8 140.00"},
+        {
+          "lower": "2 001", "upper": "10 000", "base_fee": "12 633.99",
+          "increment": {"rate": "268.99", "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil", "above": "2 000"}}
+        },
+        {
+          "lower": "10 000", "upper": "50 000", "base_fee": "38 494.51",
+          "increment": {"rate": "84.95", "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil", "above": "10 000"}}
+        },
+        {
+          "lower": "50 001", "upper": "100 000", "base_fee": "73 118.07",
+          "increment": {"rate": "32.24", "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil", "above": "50 000"}}
+        },
+        {
+          "lower": "100 000", "upper": null, "base_fee": "93 548.13",
+          "increment": {"rate": "23.65", "units": {"basis": "gross_tonnage", "unit_size": "100", "rounding": "ceil", "above": "100 000"}}
+        }
+      ]
+    }
+  ],
+  "multiplier": {"basis": "num_services", "unit_size": "1", "rounding": "ceil"},
+  "adjustments": [
+    {
+      "id": "outside_working_hours",
+      "kind": "surcharge",
+      "description": "Service commences or terminates outside ordinary working hours",
+      "percent": "25",
+      "when": [{"fact": "tug_service_outside_ordinary_working_hours", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 362, "section_ref": "3.6", "page": 8, "quote": "A surcharge of 25% is payable for a service either commencing or terminating outside"}
+    },
+    {
+      "id": "vessel_without_own_power",
+      "kind": "surcharge",
+      "description": "Vessel without its own power is serviced",
+      "percent": "50",
+      "when": [{"fact": "vessel_without_own_power", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 362, "section_ref": "3.6", "page": 8, "quote": "A surcharge of 50% is payable where a vessel without it’s own power is serviced"}
+    }
+  ],
+  "facts": [
+    {"name": "tug_service_outside_ordinary_working_hours", "type": "bool", "description": "Tug service commences or terminates outside the port's ordinary working hours", "default_value": false},
+    {"name": "vessel_without_own_power", "type": "bool", "description": "The vessel serviced has no power of its own", "default_value": false}
+  ],
+  "citations": [
+    {"chunk_id": 361, "section_ref": "3.6", "page": 8, "quote": "The table hereunder shows the craft assistance allocation"},
+    {"chunk_id": 361, "section_ref": "3.6", "page": 8, "quote": "50 001 to 100 000<br>Plus<br>Per 100 tons or part<br>thereof above<br>50 000"}
+  ],
+  "notes": ["Durban column; charged per service by tonnage band. The craft allocation table caps the number of tugs and is not a multiplier."]
+}

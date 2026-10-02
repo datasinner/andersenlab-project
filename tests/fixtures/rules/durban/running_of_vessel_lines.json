@@ -1,0 +1,33 @@
+{
+  "charge_id": "running_of_vessel_lines",
+  "name": "Running of vessel lines",
+  "section_refs": ["3.9"],
+  "port_key": "Durban",
+  "currency": "ZAR",
+  "payer": "vessel",
+  "status": "priced",
+  "components": [
+    {
+      "kind": "fixed",
+      "id": "per_service",
+      "label": "Per service",
+      "when": [{"fact": "lines_service_outside_ordinary_working_hours", "op": "eq", "value": false}],
+      "amount": "1  654.56"
+    },
+    {
+      "kind": "fixed",
+      "id": "per_service_outside_hours",
+      "label": "Per service outside ordinary working hours (minimum)",
+      "when": [{"fact": "lines_service_outside_ordinary_working_hours", "op": "eq", "value": true}],
+      "amount": "3 309.05"
+    }
+  ],
+  "multiplier": {"basis": "num_services", "unit_size": "1", "rounding": "ceil"},
+  "facts": [
+    {"name": "lines_service_outside_ordinary_working_hours", "type": "bool", "description": "Running of lines terminates or commences outside the port's ordinary working hours", "default_value": false}
+  ],
+  "citations": [
+    {"chunk_id": 391, "section_ref": "3.9", "page": 10, "quote": "per service during or outside ordinary working hours"}
+  ],
+  "notes": ["Durban is not named in the table, so the 'Other Ports' column applies."]
+}

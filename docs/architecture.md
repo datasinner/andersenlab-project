@@ -218,9 +218,8 @@ and in test fixtures only, never in `app/`.
        "kind": "banded", "id": "towage_fee", "label": "Fee per service by vessel tonnage",
        "basis": "gross_tonnage",
        "bands": [
-         {"lower": "50000", "upper": "100000", "base_fee": "73118.07",
-          "increment": {"kind": "per_unit", "id": "inc", "label": "per 100 tons above 50 000",
-                        "rate": "32.24",
+         {"lower": "50001", "upper": "100000", "base_fee": "73118.07",
+          "increment": {"rate": "32.24",
                         "units": {"basis": "gross_tonnage", "unit_size": "100",
                                   "rounding": "ceil", "above": "50000"}}},
          {"lower": "100000", "upper": null, "base_fee": "93548.13", "increment": {"…": "…"}}
@@ -228,12 +227,13 @@ and in test fixtures only, never in `app/`.
      }],
      "multiplier": {"basis": "num_services", "unit_size": "1", "rounding": "ceil"},
      "adjustments": [
-       {"id": "outside_hours", "kind": "surcharge", "percent": "25", "applies_to": "all",
+       {"id": "outside_hours", "kind": "surcharge", "description": "Outside ordinary working hours",
+        "percent": "25", "applies_to": "all",
         "when": [{"fact": "service_outside_ordinary_working_hours", "op": "eq", "value": true}]}
      ],
      "facts": [{"name": "service_outside_ordinary_working_hours", "type": "bool",
                 "description": "Service commences or terminates outside ordinary working hours (§3.1)",
-                "default_assumption": "false"}],
+                "default_value": false}],
      "notes": ["Fee is per service by tonnage band; the craft allocation table limits the number of tugs and is not a multiplier."]
    }
    ```

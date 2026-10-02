@@ -5,14 +5,14 @@ every due the vessel must pay at that port, with the formula and tariff citation
 figure. The LLM finds and interprets the rules in the document; a deterministic engine does the
 arithmetic. No tariff data is hard-coded.
 
-> **Status:** under construction. Phases 0–1 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
-> (skeleton, data model). The architecture is described in
+> **Status:** under construction. Phases 0–2 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
+> (skeleton, data model, rule DSL and calculation engine). The architecture is described in
 > [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
 ```bash
-cp .env.example .env    # set OPENAI_API_KEY (not needed yet for phases 0-1)
+cp .env.example .env    # set OPENAI_API_KEY (not needed yet for phases 0-2)
 docker compose up --build
 ```
 
@@ -36,3 +36,15 @@ uv run uvicorn app.main:app --reload
 `make test` runs the test suite against a throwaway `test` database on the same Postgres server,
 with the LLM provider forced to a fake (no API key or network needed). `make lint` runs
 `ruff check` and `ruff format --check`.
+
+### Calculation engine (no LLM, no database)
+
+`make calculate` prices the SUDESTADA validation call at Durban using hand-written rules in
+`tests/fixtures/rules/durban/`, printing each charge with its formula and assumptions. Rules are
+JSON in the rule DSL (`app/rules/dsl.py`); in later phases the agent extracts them from the tariff
+PDF instead.
+
+```bash
+uv run python scripts/calculate.py --rules <rules dir> --vessel <profile.json> \
+    --port <port> --facts '{"is_cargo_working": true}' --explain   # or --json
+```
