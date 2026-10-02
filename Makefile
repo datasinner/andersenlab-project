@@ -1,4 +1,4 @@
-.PHONY: up down test test-unit coverage lint format migrate ingest calculate smoke logs
+.PHONY: up down test test-unit coverage lint format migrate ingest calculate smoke eval-retrieval logs
 
 up:
 	docker compose up --build
@@ -41,6 +41,10 @@ calculate:
 # `uv run python scripts/llm_smoke.py --fake` runs offline.
 smoke:
 	uv run python scripts/llm_smoke.py
+
+# Recall@k of hybrid search on the ingested TNPA document (real embeddings).
+eval-retrieval:
+	uv run python eval/run_retrieval_eval.py
 
 logs:
 	docker compose logs -f

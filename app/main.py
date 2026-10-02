@@ -16,7 +16,7 @@ from app.llm.embeddings import build_embedder
 from app.llm.resilience import ResiliencePolicy
 from app.logging_conf import configure_logging
 from app.middleware import RequestContextMiddleware
-from app.routers import health
+from app.routers import documents, health
 from app.schemas import ErrorDetail, ErrorResponse
 
 configure_logging()
@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health.router)
+    app.include_router(documents.router)
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:

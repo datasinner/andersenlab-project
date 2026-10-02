@@ -36,10 +36,11 @@ class PromptTemplate:
 
 
 # Imported after PromptTemplate is defined: the prompt modules use it.
-from app.llm.prompts import document_profile, extract_rule  # noqa: E402
+from app.llm.prompts import charge_catalogue, document_profile, extract_rule  # noqa: E402
 
 PROMPTS: dict[str, PromptTemplate] = {
-    prompt.name: prompt for prompt in (document_profile.PROMPT, extract_rule.PROMPT)
+    prompt.name: prompt
+    for prompt in (charge_catalogue.PROMPT, document_profile.PROMPT, extract_rule.PROMPT)
 }
 
 

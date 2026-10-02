@@ -85,3 +85,64 @@ async def db_session(_clean_tables: None):
 
     async with async_session_factory() as session:
         yield session
+
+
+TNPA_PDF = PROJECT_ROOT / "data" / "tariffs" / "tnpa_tariff_book_2024_25.pdf"
+
+TNPA_PROFILE = {
+    "title": "Tariff Book April 2024 - March 2025",
+    "authority": "Transnet National Ports Authority",
+    "currency": "zar",
+    "vat_percent": "15",
+    "effective_from": "2024-04-01",
+    "effective_to": "2025-03-31",
+    "ports": [{"name": "Durban", "aliases": ["Port of Durban"]}],
+}
+
+TNPA_CATALOGUE = {
+    "charges": [
+        {
+            "charge_id": "light_dues",
+            "name": "Light dues",
+            "section_refs": ["1.1.1"],
+            "payer": "vessel",
+            "trigger": "per_call",
+            "description": "Per 100 tons of gross tonnage.",
+        },
+        {
+            "charge_id": "towage",
+            "name": "Tug assistance",
+            "section_refs": ["3.6"],
+            "payer": "vessel",
+            "trigger": "per_service",
+            "description": "Per service by tonnage band.",
+        },
+        {
+            "charge_id": "dry_bulk_cargo_dues",
+            "name": "Dry bulk cargo dues",
+            "section_refs": ["7.2"],
+            "payer": "cargo",
+            "trigger": "per_service",
+            "description": "Per ton of cargo.",
+        },
+    ]
+}
+
+
+def tnpa_pipeline(*, profile=None, catalogue=None):
+    """An ingestion pipeline with the fake embedder and scripted LLM answers."""
+    from app.db import async_session_factory
+    from app.ingestion.pipeline import IngestionPipeline
+    from app.llm.client import FakeLLMClient
+    from app.llm.embeddings import FakeEmbedder
+
+    llm = FakeLLMClient()
+    llm.script("document_profile", *(profile or (TNPA_PROFILE,)))
+    llm.script("charge_catalogue", *(catalogue or (TNPA_CATALOGUE,)))
+    return IngestionPipeline(async_session_factory, llm, FakeEmbedder()), llm
+
+
+@pytest_asyncio.fixture
+async def ingested_tnpa(_clean_tables: None):
+    pipeline, _ = tnpa_pipeline()
+    return await pipeline.ingest(TNPA_PDF.read_bytes(), TNPA_PDF.name)

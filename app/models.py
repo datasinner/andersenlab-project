@@ -155,6 +155,16 @@ class DocumentSection(Base):
     )
 
 
+# Full-text vector of a chunk. The breadcrumb (first paragraph) is weighted
+# above the body so a query naming a section outranks chunks that merely
+# repeat common words; "/" becomes a space because the parser otherwise reads
+# "TUGS/VESSEL" or "and/or" as one file-path token.
+CHUNK_TSV_EXPRESSION = (
+    "setweight(to_tsvector('english', translate(split_part(content, E'\\n\\n', 1), '/', ' ')), 'A')"
+    " || setweight(to_tsvector('english', translate(content, '/', ' ')), 'B')"
+)
+
+
 class Chunk(Base):
     __tablename__ = "chunk"
     __table_args__ = (_one_of("kind", ChunkKind),)
@@ -175,9 +185,7 @@ class Chunk(Base):
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     # Null until the indexing step has embedded the chunk.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embedding_dimensions))
-    tsv: Mapped[str] = mapped_column(
-        TSVECTOR, Computed("to_tsvector('english', content)", persisted=True)
-    )
+    tsv: Mapped[str] = mapped_column(TSVECTOR, Computed(CHUNK_TSV_EXPRESSION, persisted=True))
 
 
 class ChargeCatalogueEntry(Base):

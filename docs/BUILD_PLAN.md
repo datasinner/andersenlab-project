@@ -164,7 +164,8 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 ├── eval/
 │   ├── cases/sudestada_durban.yaml
 │   ├── cases/synthetic_port.yaml
-│   ├── retrieval_cases.yaml       # query → expected section refs
+│   ├── retrieval_cases.json       # query → expected section refs
+│   ├── run_retrieval_eval.py      # recall@k of hybrid search (make eval-retrieval)
 │   └── run_eval.py                # live end-to-end accuracy report
 ├── scripts/
 │   ├── ingest.py                  # CLI: ingest a PDF (idempotent)
@@ -356,7 +357,9 @@ document doesn't number its headings), `title`, `path` (breadcrumb), `level`, `p
 ### `chunk`
 `id`, `document_id FK`, `section_id FK`, `kind` (`text` | `table` | `definition`), `content text`
 (markdown, prefixed with the breadcrumb), `page`, `printed_page`, `ordinal`, `token_count`,
-`embedding vector(1536)`, `tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED`.
+`embedding vector(1536)`, `tsv tsvector GENERATED ALWAYS AS (...) STORED`: the breadcrumb is weighted
+`A` and the body `B`, and `/` is split to a space (the full-text parser otherwise reads "TUGS/VESSEL" as
+one file-path token).
 Indexes: HNSW on `embedding` (cosine), GIN on `tsv`, `(document_id, section_id)`.
 
 ### `charge_catalogue_entry`
@@ -451,8 +454,9 @@ A LangGraph `StateGraph`. The diagrams are in `docs/architecture.md`.
 
 **Retrieval** (`app/retrieval/`): pgvector cosine top-k and Postgres `ts_rank_cd` top-k, fused with
 Reciprocal Rank Fusion (`RETRIEVAL_RRF_K`). Lexical search matters here because tariff text is full
-of exact tokens ("or part thereof", port names, "per 100 tons"). Hits can be expanded to their
-whole section. Definition chunks are boosted when the query contains a defined term.
+of exact tokens ("or part thereof", port names, "per 100 tons"). The agent reads whole sections
+with `read_section` and definitions with `lookup_definition`, so search only has to point it at
+the right section.
 
 ---
 
@@ -642,7 +646,7 @@ support-assistant project.
 - **Ingestion (integration, real PDF, no LLM):** the section tree contains `3.6`; the towage table
   is a single markdown table with all port columns; running headers are stripped; re-ingesting is a
   no-op.
-- **Retrieval:** `eval/retrieval_cases.yaml` (about 15 queries → expected section refs), run with
+- **Retrieval:** `eval/retrieval_cases.json` (about 15 queries → expected section refs), run with
   real embeddings in `make eval-retrieval` and with the fake embedder in CI to check FTS + RRF
   wiring.
 - **Graph (with `FakeClient` replaying recorded structured outputs):** cache hit skips research;
@@ -777,6 +781,7 @@ and limitations.
 | Non-determinism between runs | Temperature 0, versioned prompts, rule cache, golden-rule tests |
 | Cold-cache latency and cost | Cache warm-up CLI and endpoint, concurrent fan-out, semaphore; cost per cold port logged |
 | Prompt injection through an uploaded PDF | Excerpts framed as data, read-only tools, the LLM never executes anything or computes totals |
+| A table PyMuPDF doesn't detect (e.g. TNPA §7.2 commodity rates) becomes number-heavy text that ranks poorly | The catalogue points each charge at its sections, and the agent reads whole sections; `PARSER_VISION_FALLBACK` can transcribe such pages |
 | PyMuPDF is AGPL-licensed | Acceptable for a take-home; `ingestion/parser.py` is behind a `PdfParser` protocol, so `pdfplumber` (MIT) can replace it |
 
 ---

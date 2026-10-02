@@ -1,11 +1,13 @@
 """Ingestion: PDF bytes → a ready, searchable tariff document.
 
 register (sha256, idempotent) → parse → clean → structure → chunk → store
-[parsing] → embed [indexing] → document profile [cataloguing] → ready.
+[parsing] → embed [indexing] → document profile + charge catalogue, two
+concurrent LLM calls [cataloguing] → ready.
 
 Each stage commits, so a document's status shows how far it got. Any
 failure marks the document failed with the error; ingesting the same bytes
-again retries it. A document that is already ready is left untouched.
+again retries it. A document that is already ready is left untouched unless
+force=True (e.g. after a prompt change), which rebuilds it in place.
 """
 
 import asyncio
@@ -20,6 +22,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.numbers import NumberFormatError, parse_number
+from app.ingestion.catalogue import CatalogueEntry, discover_charges
 from app.ingestion.chunker import ChunkDraft, build_chunks
 from app.ingestion.cleaner import clean
 from app.ingestion.parser import ParsedDocument, PdfParser, PyMuPdfParser
@@ -49,6 +52,7 @@ class IngestResult:
     sections: int = 0
     chunks: int = 0
     tables: int = 0
+    charges: int = 0
     error: str | None = None
 
 
@@ -65,9 +69,9 @@ class IngestionPipeline:
         self._embedder = embedder
         self._parser = parser or PyMuPdfParser()
 
-    async def ingest(self, content: bytes, filename: str) -> IngestResult:
+    async def ingest(self, content: bytes, filename: str, *, force: bool = False) -> IngestResult:
         checksum = hashlib.sha256(content).hexdigest()
-        document_id, already_ready = await self._register(content, checksum, filename)
+        document_id, already_ready = await self._register(content, checksum, filename, force)
         log = logger.bind(document_id=str(document_id), filename=filename)
         if already_ready:
             log.info("ingestion_skipped", reason="already ingested")
@@ -84,8 +88,11 @@ class IngestionPipeline:
             await self._embed_chunks(document_id)
             await self._set_status(document_id, DocumentStatus.CATALOGUING)
 
-            profile, _ = await read_profile(self._llm, parsed, sections)
-            await self._store_profile(document_id, profile)
+            (profile, _), (charges, _) = await asyncio.gather(
+                read_profile(self._llm, parsed, sections),
+                discover_charges(self._llm, sections),
+            )
+            await self._store_results(document_id, profile, charges)
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"[:_MAX_ERROR_CHARS]
             log.exception("ingestion_failed")
@@ -100,6 +107,7 @@ class IngestionPipeline:
             sections=len(sections),
             chunks=len(chunks),
             tables=table_count(sections),
+            charges=len(charges),
         )
 
     def _parse(self, content: bytes) -> ParsedDocument:
@@ -107,13 +115,13 @@ class IngestionPipeline:
         return clean(self._parser.parse(content))
 
     async def _register(
-        self, content: bytes, checksum: str, filename: str
+        self, content: bytes, checksum: str, filename: str, force: bool
     ) -> tuple[uuid.UUID, bool]:
         async with self._sessions() as session:
             document = await session.scalar(
                 select(TariffDocument).where(TariffDocument.checksum == checksum)
             )
-            if document is not None and document.status == DocumentStatus.READY:
+            if document is not None and document.status == DocumentStatus.READY and not force:
                 return document.id, True
             if document is None:
                 document = TariffDocument(
@@ -122,7 +130,8 @@ class IngestionPipeline:
                 session.add(document)
                 await session.flush()
             else:
-                # A previous attempt failed or was interrupted: start over.
+                # A previous attempt failed or was interrupted, or a rebuild
+                # was forced: start over.
                 await _delete_derived_rows(session, document.id)
             document.status = DocumentStatus.PARSING
             document.error = None
@@ -189,8 +198,25 @@ class IngestionPipeline:
                     chunk.embedding = vector
             await session.commit()
 
-    async def _store_profile(self, document_id: uuid.UUID, profile: DocumentProfile) -> None:
+    async def _store_results(
+        self,
+        document_id: uuid.UUID,
+        profile: DocumentProfile,
+        charges: list[CatalogueEntry],
+    ) -> None:
         async with self._sessions() as session:
+            session.add_all(
+                ChargeCatalogueEntry(
+                    document_id=document_id,
+                    charge_id=charge.charge_id,
+                    name=charge.name,
+                    section_refs=charge.section_refs,
+                    payer=charge.payer,
+                    trigger=charge.trigger,
+                    description=charge.description,
+                )
+                for charge in charges
+            )
             document = await session.get(TariffDocument, document_id)
             assert document is not None
             document.title = profile.title

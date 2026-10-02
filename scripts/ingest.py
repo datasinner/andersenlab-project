@@ -2,6 +2,7 @@
 
     uv run python scripts/ingest.py --dir data/tariffs
     uv run python scripts/ingest.py --file path/to/tariff.pdf
+    uv run python scripts/ingest.py --dir data/tariffs --force   # rebuild ready documents
 
 Exit code 0 if every file is ready, 1 if any failed, 2 on a setup error.
 The container entrypoint runs this for TARIFFS_DIR before starting the API.
@@ -21,7 +22,7 @@ from app.logging_conf import configure_logging
 from app.models import DocumentStatus
 
 
-async def main(paths: list[Path]) -> int:
+async def main(paths: list[Path], force: bool) -> int:
     configure_logging()
     policy = ResiliencePolicy.from_settings()
     try:
@@ -35,7 +36,7 @@ async def main(paths: list[Path]) -> int:
     failed = 0
     try:
         for path in paths:
-            result = await pipeline.ingest(path.read_bytes(), path.name)
+            result = await pipeline.ingest(path.read_bytes(), path.name, force=force)
             if result.status == DocumentStatus.FAILED:
                 failed += 1
                 print(f"FAILED  {path.name}: {result.error}", file=sys.stderr)
@@ -44,7 +45,7 @@ async def main(paths: list[Path]) -> int:
             else:
                 print(
                     f"ready   {path.name}: {result.sections} sections, {result.chunks} chunks, "
-                    f"{result.tables} tables ({result.document_id})"
+                    f"{result.tables} tables, {result.charges} charges ({result.document_id})"
                 )
     finally:
         await engine.dispose()
@@ -65,8 +66,10 @@ if __name__ == "__main__":
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--dir", help="ingest every PDF in this directory")
     source.add_argument("--file", help="ingest one PDF")
-    paths = _pdf_paths(parser.parse_args())
+    parser.add_argument("--force", action="store_true", help="rebuild already-ingested documents")
+    args = parser.parse_args()
+    paths = _pdf_paths(args)
     if not paths:
         print("no PDF files to ingest")
         raise SystemExit(0)
-    raise SystemExit(asyncio.run(main(paths)))
+    raise SystemExit(asyncio.run(main(paths, args.force)))

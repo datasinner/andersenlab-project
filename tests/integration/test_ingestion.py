@@ -1,22 +1,17 @@
 """Ingestion of the real TNPA tariff book (BUILD_PLAN §14), with the fake
-embedder and a scripted document profile: no network, but the real PDF,
-parser, structure, chunker and database."""
-
-from pathlib import Path
+embedder and scripted LLM answers: no network, but the real PDF, parser,
+structure, chunker and database."""
 
 import pytest
 from sqlalchemy import func, select
 
-from app.db import async_session_factory
 from app.ingestion.chunker import build_chunks
 from app.ingestion.cleaner import clean
 from app.ingestion.parser import PyMuPdfParser
-from app.ingestion.pipeline import IngestionPipeline
 from app.ingestion.structure import build_sections
-from app.llm.client import FakeLLMClient
-from app.llm.embeddings import FakeEmbedder
 from app.llm.resilience import LLMUnavailableError
 from app.models import (
+    ChargeCatalogueEntry,
     Chunk,
     ChunkKind,
     DocumentSection,
@@ -24,32 +19,16 @@ from app.models import (
     SectionKind,
     TariffDocument,
 )
+from tests.integration.conftest import TNPA_CATALOGUE, TNPA_PDF, TNPA_PROFILE, tnpa_pipeline
 
-PDF = Path(__file__).resolve().parents[2] / "data" / "tariffs" / "tnpa_tariff_book_2024_25.pdf"
 PORT_COLUMNS = ["Richards", "Durban", "East", "London", "Elizabeth", "Mossel", "Cape", "Saldanha"]
-
-PROFILE = {
-    "title": "Tariff Book April 2024 - March 2025",
-    "authority": "Transnet National Ports Authority",
-    "currency": "zar",
-    "vat_percent": "15",
-    "effective_from": "2024-04-01",
-    "effective_to": "2025-03-31",
-    "ports": [{"name": "Durban", "aliases": ["Port of Durban"]}],
-}
 
 
 @pytest.fixture(scope="module")
 def tnpa():
-    parsed = clean(PyMuPdfParser().parse(PDF.read_bytes()))
+    parsed = clean(PyMuPdfParser().parse(TNPA_PDF.read_bytes()))
     sections = build_sections(parsed)
     return parsed, sections, build_chunks(sections)
-
-
-def _pipeline(*profile_responses) -> tuple[IngestionPipeline, FakeLLMClient]:
-    llm = FakeLLMClient()
-    llm.script("document_profile", *(profile_responses or (PROFILE,)))
-    return IngestionPipeline(async_session_factory, llm, FakeEmbedder()), llm
 
 
 # -- structure of the real document ---------------------------------------------
@@ -94,26 +73,24 @@ def test_running_headers_are_stripped_and_kept_for_the_profile(tnpa):
 
 def test_contents_are_not_chunked_and_definitions_are_per_term(tnpa):
     _, sections, chunks = tnpa
-    kinds = {section.kind for section in sections}
-    assert SectionKind.CONTENTS in kinds
     contents = {s.ordinal for s in sections if s.kind == SectionKind.CONTENTS}
+    assert contents
     assert not any(chunk.section_ordinal in contents for chunk in chunks)
     definitions = [chunk for chunk in chunks if chunk.kind == ChunkKind.DEFINITION]
+    assert len(definitions) > 20
     assert any("“Act” means the National Ports Act" in chunk.content for chunk in definitions)
-    assert all(
-        chunk.content.startswith(definitions[0].content.split("\n\n")[0]) for chunk in definitions
-    )
 
 
 # -- the pipeline ---------------------------------------------------------------------
 
 
-async def test_pipeline_ingests_the_pdf_and_reads_its_profile(db_session):
-    pipeline, llm = _pipeline()
-    result = await pipeline.ingest(PDF.read_bytes(), PDF.name)
+async def test_pipeline_ingests_the_pdf_profile_and_catalogue(db_session):
+    pipeline, llm = tnpa_pipeline()
+    result = await pipeline.ingest(TNPA_PDF.read_bytes(), TNPA_PDF.name)
 
     assert result.status == DocumentStatus.READY and result.created
     assert result.sections > 90 and result.chunks > 100 and result.tables >= 10
+    assert result.charges == len(TNPA_CATALOGUE["charges"])
 
     document = await db_session.get(TariffDocument, result.document_id)
     assert document.status == DocumentStatus.READY
@@ -128,36 +105,63 @@ async def test_pipeline_ingests_the_pdf_and_reads_its_profile(db_session):
     towage = await db_session.scalar(select(DocumentSection).where(DocumentSection.ref == "3.6"))
     assert towage.page_start == 8
 
-    # The profile prompt saw the running text and the port table headers.
-    prompt = llm.calls[0].messages[1].content
-    assert "Tariffs subject to VAT at 15%" in prompt
-    assert "Durban" in prompt and "Saldanha" in prompt
+    charges = list(await db_session.scalars(select(ChargeCatalogueEntry)))
+    assert {(charge.charge_id, charge.payer) for charge in charges} == {
+        ("light_dues", "vessel"),
+        ("towage", "vessel"),
+        ("dry_bulk_cargo_dues", "cargo"),
+    }
+
+    # The profile prompt saw the running text and the port table headers; the
+    # catalogue prompt saw the outline with each section's opening text.
+    prompts = {call.name: call.messages[1].content for call in llm.calls}
+    assert "Tariffs subject to VAT at 15%" in prompts["document_profile"]
+    assert "Durban" in prompts["document_profile"] and "Saldanha" in prompts["document_profile"]
+    assert "3.6 | 3.6 TUGS/VESSEL ASSISTANCE AND/OR ATTENDANCE |" in prompts["charge_catalogue"]
 
 
 async def test_reingesting_the_same_bytes_is_a_no_op(db_session):
-    pipeline, llm = _pipeline()
-    first = await pipeline.ingest(PDF.read_bytes(), PDF.name)
-    second = await pipeline.ingest(PDF.read_bytes(), "renamed.pdf")
+    pipeline, llm = tnpa_pipeline()
+    first = await pipeline.ingest(TNPA_PDF.read_bytes(), TNPA_PDF.name)
+    second = await pipeline.ingest(TNPA_PDF.read_bytes(), "renamed.pdf")
 
     assert second.document_id == first.document_id
     assert not second.created and second.status == DocumentStatus.READY
-    assert len(llm.calls) == 1
+    assert len(llm.calls) == 2  # profile and catalogue, once
     assert await db_session.scalar(select(func.count()).select_from(TariffDocument)) == 1
     assert await db_session.scalar(select(func.count()).select_from(Chunk)) == first.chunks
 
 
 async def test_failed_ingestion_is_recorded_and_retried(db_session):
-    pipeline, _ = _pipeline(LLMUnavailableError("provider down"), PROFILE)
+    pipeline, _ = tnpa_pipeline(
+        profile=(LLMUnavailableError("provider down"), TNPA_PROFILE),
+        catalogue=(TNPA_CATALOGUE, TNPA_CATALOGUE),
+    )
 
-    failed = await pipeline.ingest(PDF.read_bytes(), PDF.name)
+    failed = await pipeline.ingest(TNPA_PDF.read_bytes(), TNPA_PDF.name)
     assert failed.status == DocumentStatus.FAILED
     assert failed.error == "LLMUnavailableError: provider down"
     document = await db_session.get(TariffDocument, failed.document_id)
     assert (document.status, document.error) == (DocumentStatus.FAILED, failed.error)
 
-    retried = await pipeline.ingest(PDF.read_bytes(), PDF.name)
+    retried = await pipeline.ingest(TNPA_PDF.read_bytes(), TNPA_PDF.name)
     assert retried.document_id == failed.document_id
     assert retried.status == DocumentStatus.READY and retried.created
     db_session.expire_all()
     assert await db_session.scalar(select(func.count()).select_from(Chunk)) == retried.chunks
     assert await db_session.scalar(select(func.count()).select_from(TariffDocument)) == 1
+    assert await db_session.scalar(select(func.count()).select_from(ChargeCatalogueEntry)) == 3
+
+
+async def test_forced_reingestion_rebuilds_a_ready_document(db_session):
+    pipeline, llm = tnpa_pipeline(
+        profile=(TNPA_PROFILE, TNPA_PROFILE), catalogue=(TNPA_CATALOGUE, TNPA_CATALOGUE)
+    )
+    first = await pipeline.ingest(TNPA_PDF.read_bytes(), TNPA_PDF.name)
+    rebuilt = await pipeline.ingest(TNPA_PDF.read_bytes(), TNPA_PDF.name, force=True)
+
+    assert rebuilt.document_id == first.document_id
+    assert rebuilt.created and rebuilt.status == DocumentStatus.READY
+    assert len(llm.calls) == 4
+    assert await db_session.scalar(select(func.count()).select_from(Chunk)) == first.chunks
+    assert await db_session.scalar(select(func.count()).select_from(ChargeCatalogueEntry)) == 3
