@@ -5,7 +5,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # An empty value (e.g. "LLM_REASONING_EFFORT=") means "not set".
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", env_parse_none_str=""
+    )
 
     app_env: Literal["development", "production", "test"] = "development"
     log_level: str = "INFO"
@@ -18,7 +21,10 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     # Must match the vector(n) column created by the first migration.
     embedding_dimensions: int = Field(default=1536, gt=0)
+    # None omits the parameter, for models that only accept their default.
     llm_temperature: float | None = Field(default=0.0, ge=0.0, le=2.0)
+    # Only for reasoning models; None leaves the model's default.
+    llm_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
     llm_timeout_seconds: int = Field(default=60, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)
     llm_max_concurrency: int = Field(default=8, gt=0)

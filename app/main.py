@@ -11,6 +11,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import settings
 from app.db import engine
 from app.errors import AppError
+from app.llm.client import build_llm_client
+from app.llm.embeddings import build_embedder
+from app.llm.resilience import ResiliencePolicy
 from app.logging_conf import configure_logging
 from app.middleware import RequestContextMiddleware
 from app.routers import health
@@ -22,11 +25,23 @@ logger = structlog.get_logger("app.lifespan")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    logger.info("startup_complete", app_env=settings.app_env, llm_provider=settings.llm_provider)
+    # One policy per process: the chat client and the embedder share its
+    # semaphore. A missing API key fails here, at startup, not mid-request.
+    policy = ResiliencePolicy.from_settings()
+    app.state.llm_client = build_llm_client(policy)
+    app.state.embedder = build_embedder(policy)
+    logger.info(
+        "startup_complete",
+        app_env=settings.app_env,
+        llm_provider=settings.llm_provider,
+        llm_model=app.state.llm_client.model_name,
+        embedding_model=app.state.embedder.model_name,
+    )
 
     yield
 
     logger.info("shutdown_started")
+    app.state.llm_client.shutdown()
     await engine.dispose()
     logger.info("shutdown_complete")
 

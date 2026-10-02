@@ -1,4 +1,4 @@
-.PHONY: up down test test-unit coverage lint format migrate calculate logs
+.PHONY: up down test test-unit coverage lint format migrate calculate smoke logs
 
 up:
 	docker compose up --build
@@ -14,7 +14,7 @@ test-unit:
 	uv run pytest tests/unit
 
 coverage:
-	uv run pytest tests/unit --cov=app/rules --cov=app/domain --cov-branch --cov-report=term-missing
+	uv run pytest tests/unit --cov=app/rules --cov=app/domain --cov=app/llm --cov-branch --cov-report=term-missing
 
 lint:
 	uv run ruff check .
@@ -32,6 +32,11 @@ calculate:
 	uv run python scripts/calculate.py --rules tests/fixtures/rules/durban \
 		--vessel tests/fixtures/vessels/sudestada.json --port Durban \
 		--facts '{"is_cargo_working": true}' --explain
+
+# One real structured extraction + embedding call (needs OPENAI_API_KEY);
+# `uv run python scripts/llm_smoke.py --fake` runs offline.
+smoke:
+	uv run python scripts/llm_smoke.py
 
 logs:
 	docker compose logs -f

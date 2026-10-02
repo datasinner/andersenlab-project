@@ -7,6 +7,8 @@ import os
 # import in fixtures is deferred into fixture bodies.
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://tariff:tariff@localhost:5432/test"
 os.environ["LLM_PROVIDER"] = "fake"
+# Blank (= unset) even if .env has a real key: tests never reach the network.
+os.environ["OPENAI_API_KEY"] = ""
 os.environ["APP_ENV"] = "test"
 os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 os.environ["API_AUTH_KEY"] = ""

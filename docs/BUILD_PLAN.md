@@ -140,9 +140,11 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │   │   ├── search.py              # pgvector + Postgres full-text, reciprocal rank fusion
 │   │   └── context.py             # section expansion, definition lookup
 │   ├── llm/
-│   │   ├── client.py              # LLMClient protocol, OpenAIClient, FakeClient
+│   │   ├── client.py              # LLMClient protocol, OpenAIClient, FakeLLMClient
 │   │   ├── embeddings.py          # Embedder protocol, OpenAIEmbedder, FakeEmbedder
-│   │   └── prompts/               # one module per prompt, each with a PROMPT_VERSION
+│   │   ├── resilience.py          # shared semaphore, timeout, retry policy, error types
+│   │   ├── schema.py              # Pydantic model → strict Structured Outputs JSON schema
+│   │   └── prompts/               # one module per prompt, each with a version
 │   ├── agent/
 │   │   ├── state.py               # graph state models
 │   │   ├── graph.py               # LangGraph wiring (§9)
@@ -167,6 +169,7 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │   ├── ingest.py                  # CLI: ingest a PDF (idempotent)
 │   ├── compile_rules.py           # CLI: compile + export the rulebook for a port
 │   ├── calculate.py               # CLI: price a vessel call without the API
+│   ├── llm_smoke.py               # one real extraction + embedding call (Phase 3 gate)
 │   └── make_synthetic_tariff.py   # renders the synthetic test-port PDF
 ├── tests/
 │   ├── unit/                      # engine, DSL, grounding, numbers, structure, chunker, fusion
@@ -203,6 +206,7 @@ All settings live in one `Settings` class in `app/config.py`. Every value appear
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | verify the current model id |
 | `EMBEDDING_DIMENSIONS` | `1536` | must match the `vector(n)` column in the migration |
 | `LLM_TEMPERATURE` | `0` | omit the parameter if the chosen model rejects it |
+| `LLM_REASONING_EFFORT` | empty | reasoning models only (`minimal` … `high`); empty keeps the model default |
 | `LLM_TIMEOUT_SECONDS` | `60` | ceiling for one model call |
 | `LLM_MAX_RETRIES` | `2` | retries on 429/5xx only |
 | `LLM_MAX_CONCURRENCY` | `8` | semaphore size **per worker process** |

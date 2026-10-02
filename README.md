@@ -5,14 +5,14 @@ every due the vessel must pay at that port, with the formula and tariff citation
 figure. The LLM finds and interprets the rules in the document; a deterministic engine does the
 arithmetic. No tariff data is hard-coded.
 
-> **Status:** under construction. Phases 0–2 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
-> (skeleton, data model, rule DSL and calculation engine). The architecture is described in
+> **Status:** under construction. Phases 0–3 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
+> (skeleton, data model, rule DSL and calculation engine, OpenAI client layer). The architecture is described in
 > [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
 
 ```bash
-cp .env.example .env    # set OPENAI_API_KEY (not needed yet for phases 0-2)
+cp .env.example .env    # set OPENAI_API_KEY, or LLM_PROVIDER=fake to run offline
 docker compose up --build
 ```
 
@@ -48,3 +48,9 @@ PDF instead.
 uv run python scripts/calculate.py --rules <rules dir> --vessel <profile.json> \
     --port <port> --facts '{"is_cargo_working": true}' --explain   # or --json
 ```
+
+### LLM smoke test
+
+`make smoke` makes one real Structured Outputs call (extracting a rule from an invented tariff
+excerpt, then pricing it with the engine) and one embedding call, using `OPENAI_API_KEY` from
+`.env`. `uv run python scripts/llm_smoke.py --fake` does the same offline with the fake clients.
