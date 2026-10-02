@@ -73,7 +73,8 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 - **PostgreSQL 16 + pgvector** as the only datastore: documents, sections, chunks, embeddings,
   full-text index, charge catalogue, compiled rules, calculations, agent traces.
 - **OpenAI** for every model call: a chat model for extraction and reasoning, `text-embedding-3-*`
-  for embeddings, through `langchain-openai`.
+  for embeddings, through `langchain-openai`. Chat calls use the Responses API: reasoning models
+  such as `gpt-5.6-luna` accept function tools only there.
 - Every LLM extraction uses **Structured Outputs**
   (`with_structured_output(Model, method="json_schema", strict=True)`) into a Pydantic model.
   Never regex-parse model prose.
@@ -124,6 +125,7 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │   ├── observability.py           # optional Langfuse tracing
 │   ├── domain/
 │   │   ├── vessel.py              # VesselCall, derived quantities, profile mapping (§6.1)
+│   │   ├── ports.py               # match a requested port to a document's ports
 │   │   └── numbers.py             # Decimal helpers, number normalisation ("2  801.91" → 2801.91)
 │   ├── rules/
 │   │   ├── dsl.py                 # ChargeRule + components: the agent ↔ engine contract (§6.2)
@@ -148,8 +150,9 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │   │   └── prompts/               # one module per prompt, each with a version
 │   ├── agent/
 │   │   ├── state.py               # graph state models
-│   │   ├── graph.py               # LangGraph wiring (§9)
-│   │   ├── tools.py               # search_tariff, read_section, lookup_definition, list_sections
+│   │   ├── compile.py             # LangGraph: research → extract → validate → critique (§9)
+│   │   ├── graph.py               # LangGraph: the calculation graph (Phase 7)
+│   │   ├── tools.py               # SearchTariff, ReadSection, LookupDefinition, ListSections, SubmitEvidence
 │   │   └── nodes/                 # one module per node in §9
 │   ├── services/
 │   │   ├── documents.py           # register, ingest, list
@@ -170,7 +173,7 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 ├── scripts/
 │   ├── ingest.py                  # CLI: ingest a PDF (idempotent)
 │   ├── compile_rules.py           # CLI: compile + export the rulebook for a port
-│   ├── calculate.py               # CLI: price a vessel call without the API
+│   ├── calculate.py               # CLI: price a vessel call from rule files, without the API
 │   ├── llm_smoke.py               # one real extraction + embedding call (Phase 3 gate)
 │   └── make_synthetic_tariff.py   # renders the synthetic test-port PDF
 ├── tests/
@@ -302,7 +305,7 @@ class Citation(BaseModel):    chunk_id; section_ref; page; quote
 
 class ChargeRule(BaseModel):
     charge_id; name; section_refs; port_key; currency; payer: Literal["vessel","cargo","other"]
-    status: Literal["priced", "on_application", "not_priced_in_document"]
+    status: Literal["priced", "on_application", "not_priced_in_document", "not_applicable_at_port"]
     applies_when: list[Condition]          # all must hold, otherwise not applicable
     exemptions: list[Exemption]
     components: list[Component]            # summed → amount per service/call
@@ -369,10 +372,13 @@ Indexes: HNSW on `embedding` (cosine), GIN on `tsv`, `(document_id, section_id)`
 
 ### `compiled_rule`
 `id`, `document_id FK`, `port_key`, `charge_id`, `rule jsonb`, `rule_schema_version`,
-`prompt_version`, `model`, `critic_verdict jsonb`, `created_at`.
+`prompt_version`, `model`, `critic_verdict jsonb` (outcome, open issues, review notes, revisions,
+sections read, research notes), `created_at`.
 Unique `(document_id, port_key, charge_id, rule_schema_version, prompt_version)`. Only rules that
-passed validation **and** the critic are written. Bumping a prompt or schema version invalidates the
-cache without a migration.
+passed validation are written: approved ones, and ones the critic still had blocking issues with
+after the last revision (outcome `low_confidence`, issues kept), so a calculation never silently
+recompiles and changes its answer. Bumping a prompt or schema version invalidates the cache without
+a migration.
 
 ### `calculation`
 `id uuid PK`, `request_id`, `document_id FK`, `port_key`, `vessel_call jsonb`, `query_text`,
@@ -442,7 +448,7 @@ A LangGraph `StateGraph`. The diagrams are in `docs/architecture.md`.
 | `validate_rule` | code | Schema checks (contiguous bands, positive unit sizes, known `Basis` values, component ids referenced by adjustments) plus **grounding**: every numeric literal appears in its cited chunk after normalisation. Failure → back to `extract_rule` with the error list. |
 | `resolve_facts` | code + LLM | Quantities come from `VesselCall` (code). The rule's qualitative facts are resolved by one structured LLM call that sees the vessel call, each fact's tariff description and the relevant definitions (e.g. the port's ordinary working hours). It returns `{value, reasoning, source: vessel_data \| tariff_text \| default_assumption}`. Request `overrides` win. |
 | `compute` | code | Runs the engine (§6.3) → line item + trace. |
-| `critique` | LLM, structured | Reviews the evidence, rule, facts and trace. Did it use the right port column? Did it miss a reduction, surcharge or minimum? Is "per service" multiplied correctly? Is "or part thereof" rounded up? Returns `approved`, `revise(issues)` or `not_applicable(reason)`. `revise` → `extract_rule` (≤ `AGENT_MAX_REVISIONS`). `approved` → rule written to the cache. If revisions run out, the line item is kept but flagged `low_confidence` with the critic's issues. |
+| `critique` | LLM, structured | Reviews the evidence and the rule, plus the engine's evaluation of it for one illustrative vessel. Did it use the right port column? Did it miss a reduction, surcharge or minimum? Is "per service" multiplied correctly? Is "or part thereof" rounded up? Each issue is `blocking` (wrong amount or applicability for an ordinary call, or a missing vessel/call-dependent reduction, surcharge, minimum or exemption) or `minor` (anything else, e.g. how request- or delay-triggered extras are modelled). Blocking issues → `extract_rule` (≤ `AGENT_MAX_REVISIONS`); none → approved, minor ones kept as review notes. If revisions run out, the last grounded rule is kept, flagged `low_confidence` with the open issues. Extractor and critic share one description of how the engine evaluates a rule (`prompts/rule_semantics.py`), so they agree on what a rule means. |
 | `aggregate` | code | Collects the results, orders them by section, totals, attaches warnings and persists `calculation` + `agent_step`. A charge that raised an error gives `status: partial`, never a 500. |
 
 **Tools** (`app/agent/tools.py`, all read-only, scoped to the resolved document):

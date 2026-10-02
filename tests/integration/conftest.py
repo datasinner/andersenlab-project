@@ -129,6 +129,24 @@ TNPA_CATALOGUE = {
 }
 
 
+class _MemoisedParser:
+    """Parses each PDF once per test session. The cleaner mutates what the
+    parser returns, so every caller gets its own deep copy."""
+
+    _cache: dict[bytes, object] = {}
+
+    def parse(self, content: bytes):
+        import copy
+        import hashlib
+
+        from app.ingestion.parser import PyMuPdfParser
+
+        key = hashlib.sha256(content).digest()
+        if key not in self._cache:
+            self._cache[key] = PyMuPdfParser().parse(content)
+        return copy.deepcopy(self._cache[key])
+
+
 def tnpa_pipeline(*, profile=None, catalogue=None):
     """An ingestion pipeline with the fake embedder and scripted LLM answers."""
     from app.db import async_session_factory
@@ -139,7 +157,10 @@ def tnpa_pipeline(*, profile=None, catalogue=None):
     llm = FakeLLMClient()
     llm.script("document_profile", *(profile or (TNPA_PROFILE,)))
     llm.script("charge_catalogue", *(catalogue or (TNPA_CATALOGUE,)))
-    return IngestionPipeline(async_session_factory, llm, FakeEmbedder()), llm
+    pipeline = IngestionPipeline(
+        async_session_factory, llm, FakeEmbedder(), parser=_MemoisedParser()
+    )
+    return pipeline, llm
 
 
 @pytest_asyncio.fixture

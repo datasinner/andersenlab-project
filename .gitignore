@@ -222,3 +222,4 @@ __marimo__/
 !.env.example
 .DS_Store
 eval/report.json
+build/

@@ -125,6 +125,11 @@ class _Evaluation:
                 LineItemStatus.NOT_PRICED,
                 reason=self._notes_or("The document does not state a rate for this charge."),
             )
+        if rule.status == "not_applicable_at_port":
+            return self._result(
+                LineItemStatus.NOT_APPLICABLE,
+                reason=self._notes_or(f"Not charged at {rule.port_key}."),
+            )
 
         for exemption in rule.exemptions:
             if self._all_hold(exemption.when):

@@ -220,6 +220,7 @@ def test_result_is_rounded_half_up_to_cents():
             LineItemStatus.NOT_PRICED,
             "The document does not state a rate for this charge.",
         ),
+        ("not_applicable_at_port", LineItemStatus.NOT_APPLICABLE, "Not charged at Exampleville."),
     ],
 )
 def test_unpriced_rules_pass_their_status_through(status, expected_status, reason):

@@ -30,13 +30,22 @@ def test_render_refuses_to_leave_a_placeholder_unfilled():
 
 
 def test_registry_ids_and_combined_versions():
-    assert PROMPTS["extract_rule"].id == "extract_rule@1"
-    assert versions("extract_rule") == "extract_rule@1"
+    extract, critique = PROMPTS["extract_rule"], PROMPTS["critique"]
+    assert extract.id == f"extract_rule@{extract.version}"
+    # Sorted, so the cache key doesn't depend on argument order.
+    assert versions("extract_rule", "critique") == f"{critique.id}+{extract.id}"
+    assert versions("critique", "extract_rule") == versions("extract_rule", "critique")
 
 
 def test_extract_rule_prompt_lists_every_quantity():
     system, _ = PROMPTS["extract_rule"].render(
-        quantities=quantity_glossary(), port="P", charge_name="C", currency="XTS", excerpts="E"
+        quantities=quantity_glossary(),
+        port="P",
+        charge_name="C",
+        currency="XTS",
+        research_notes="",
+        excerpts="E",
+        feedback="",
     )
     for basis in Basis:
         assert f"- {basis.value}:" in system.content

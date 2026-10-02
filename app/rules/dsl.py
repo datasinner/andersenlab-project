@@ -29,7 +29,7 @@ from pydantic import (
 from app.domain.numbers import parse_number
 from app.domain.vessel import Basis
 
-RULE_SCHEMA_VERSION = 1
+RULE_SCHEMA_VERSION = 2
 
 
 def _to_decimal(value: object) -> object:
@@ -117,14 +117,14 @@ class _Component(_Model):
 
 
 class FixedFee(_Component):
-    kind: Literal["fixed"] = "fixed"
+    kind: Literal["fixed"]
     amount: NonNegativeAmount
 
 
 class PerUnitFee(_Component):
     """rate × units, optionally × time units (per 100 tons per 24 hours)."""
 
-    kind: Literal["per_unit"] = "per_unit"
+    kind: Literal["per_unit"]
     rate: NonNegativeAmount
     units: Units
     per_time: Units | None = None
@@ -148,7 +148,7 @@ class BandedFee(_Component):
     """Exactly one band applies: the first, in listed order, containing the
     quantity."""
 
-    kind: Literal["banded"] = "banded"
+    kind: Literal["banded"]
     basis: Basis
     bands: list[Band] = Field(min_length=1)
 
@@ -176,7 +176,7 @@ class TieredFee(_Component):
     """Marginal tiers: each slice of the quantity is charged at its own
     rate ("first 17 700 tons at X, the following 17 600 tons at Y")."""
 
-    kind: Literal["tiered"] = "tiered"
+    kind: Literal["tiered"]
     basis: Basis
     tiers: list[Tier] = Field(min_length=1)
 
@@ -230,7 +230,8 @@ class ChargeRule(_Model):
     port_key: str = Field(min_length=1)
     currency: str = Field(min_length=3, max_length=3)
     payer: Literal["vessel", "cargo", "other"]
-    status: Literal["priced", "on_application", "not_priced_in_document"]
+    # not_applicable_at_port: the document defines the charge only for other ports.
+    status: Literal["priced", "on_application", "not_priced_in_document", "not_applicable_at_port"]
     applies_when: list[Condition] = Field(default_factory=list)
     exemptions: list[Exemption] = Field(default_factory=list)
     components: list[Component] = Field(default_factory=list)

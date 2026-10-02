@@ -4,7 +4,8 @@ This is the cheap, deterministic guard against a model inventing or
 mistyping a rate. It checks:
 
 - every cited chunk exists;
-- every citation quote appears in its chunk (whitespace-insensitive);
+- every citation quote appears in its chunk: the same words in the same order,
+  ignoring case, punctuation and typography (curly quotes, dashes, dot leaders);
 - every number in the rule (fees, rates, band bounds, tier bounds, unit
   sizes, offsets, minimum/maximum, percentages, numeric condition values)
   appears somewhere in the cited chunks.
@@ -31,8 +32,8 @@ from app.rules.dsl import (
 )
 
 _STRUCTURAL_NUMBERS = {Decimal(0), Decimal(1)}
-_WHITESPACE = re.compile(r"\s+")
 _MARKDOWN_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_WORDS = re.compile(r"[^\W_]+")
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,8 @@ def check_grounding(rule: ChargeRule, chunk_texts: Mapping[int, str]) -> list[Gr
 
 
 def _normalize(text: str) -> str:
-    return _WHITESPACE.sub(" ", _MARKDOWN_BREAK.sub(" ", text)).strip().casefold()
+    words = _WORDS.findall(_MARKDOWN_BREAK.sub(" ", text).casefold())
+    return " " + " ".join(words) + " "
 
 
 def _citations(rule: ChargeRule) -> list[tuple[str, Citation]]:

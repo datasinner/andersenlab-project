@@ -121,6 +121,8 @@ async def main(use_fake: bool) -> int:
         port="Exampleville",
         charge_name="Pilotage dues",
         currency="XTS",
+        research_notes="(none)",
+        feedback="",
         excerpts=f'<tariff_excerpt chunk_id="{CHUNK_ID}" section="2.1" page="3">\n'
         f"{EXCERPT}\n</tariff_excerpt>",
     )

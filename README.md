@@ -5,9 +5,9 @@ every due the vessel must pay at that port, with the formula and tariff citation
 figure. The LLM finds and interprets the rules in the document; a deterministic engine does the
 arithmetic. No tariff data is hard-coded.
 
-> **Status:** under construction. Phases 0–5 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
+> **Status:** under construction. Phases 0–6 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
 > (skeleton, data model, rule DSL and calculation engine, OpenAI client layer, PDF ingestion,
-> retrieval and charge catalogue). The architecture is described in
+> retrieval and charge catalogue, rule-compilation agent). The architecture is described in
 > [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
@@ -27,6 +27,8 @@ TNPA Tariff Book 2024/25; already-ingested files are skipped), then serves the A
 - `GET /v1/documents`, `GET /v1/documents/{id}`: ingested tariff documents and their profile
 - `GET /v1/documents/{id}/charges`: the charges the document defines (the charge catalogue)
 - `GET /v1/documents/{id}/sections/{ref}`: one section's text, e.g. `3.6`
+- `POST /v1/rules/compile`: have the agent compile a port's rules (cached; minutes when cold)
+- `GET /v1/rules?port=Durban`: the compiled rulebook for a port, for review
 
 `docker compose down -v` removes everything, including the database volume.
 
@@ -74,3 +76,24 @@ run, and `--force` rebuilds a document that is already ingested.
 `make eval-retrieval` measures recall@5 of the hybrid search (pgvector + Postgres full-text, fused
 with reciprocal rank fusion) on 17 queries against the TNPA document; it currently finds the right
 section for 16 of them (0.94).
+
+### Compiling rules with the agent
+
+For each charge a vessel routinely pays at a port, a LangGraph agent researches the tariff with
+tools (search, read a section, look up a definition, list the outline), extracts the charge as a
+typed `ChargeRule`, checks that every number in it is printed in the text it cites, and has a
+second model call review it; blocking review issues go back to the extractor. Rules are cached per
+document, port and prompt version.
+
+```bash
+uv run python scripts/compile_rules.py --port Durban --out-dir build/rulebook/durban --verbose
+uv run python scripts/calculate.py --rules build/rulebook/durban \
+    --vessel tests/fixtures/vessels/sudestada.json --port Durban --explain
+```
+
+`--verbose` prints every step the agent took (sections opened, searches, revisions, review
+notes). Compiled from the TNPA PDF, the Durban rulebook prices SUDESTADA exactly like the
+hand-written golden rules in `tests/fixtures/rules/durban/`: light dues 60,062.04, port dues
+199,371.35, towage 147,074.38, VTS 33,345.00, pilotage 47,189.94, berthing 19,639.50, running of
+lines 3,309.12 (ZAR); berth dues not applicable to a cargo-working call. Compiling those eight
+charges from scratch took about three minutes and 390k tokens.

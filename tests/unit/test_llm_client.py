@@ -95,11 +95,30 @@ async def test_refusal_is_an_output_error():
         await client.generate_structured(Fee, MESSAGES, name="extract")
 
 
-async def test_truncated_answer_is_an_output_error():
-    truncated = _answer('{"name": "Pil', response_metadata={"finish_reason": "length"})
-    client, _ = _client(truncated)
+async def test_responses_api_refusal_block_is_an_output_error():
+    client, _ = _client(_answer([{"type": "refusal", "refusal": "No."}]))
+    with pytest.raises(LLMOutputError, match="refused: No."):
+        await client.generate_structured(Fee, MESSAGES, name="extract")
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"finish_reason": "length"},
+        {"status": "incomplete", "incomplete_details": {"reason": "max_output_tokens"}},
+    ],
+)
+async def test_truncated_answer_is_an_output_error(metadata):
+    client, _ = _client(_answer('{"name": "Pil', response_metadata=metadata))
     with pytest.raises(LLMOutputError, match="cut off"):
         await client.generate_structured(Fee, MESSAGES, name="extract")
+
+
+async def test_responses_api_content_blocks_are_read_as_text():
+    blocks = [{"type": "text", "text": json.dumps({"name": "Pilotage", "amount": "1"})}]
+    client, _ = _client(_answer(blocks))
+    result = await client.generate_structured(Fee, MESSAGES, name="extract")
+    assert result.value.name == "Pilotage"
 
 
 async def test_tool_turn_binds_the_tools_and_returns_the_message():
@@ -129,6 +148,7 @@ def test_openai_client_passes_model_options(monkeypatch):
     assert chat_model.temperature is None
     assert chat_model.reasoning_effort == "low"
     assert chat_model.max_retries == 0
+    assert chat_model.use_responses_api is True
 
 
 def test_build_llm_client_selects_the_provider(monkeypatch):

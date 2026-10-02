@@ -9,15 +9,16 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
-from app.db import engine
+from app.db import async_session_factory, engine
 from app.errors import AppError
 from app.llm.client import build_llm_client
 from app.llm.embeddings import build_embedder
 from app.llm.resilience import ResiliencePolicy
 from app.logging_conf import configure_logging
 from app.middleware import RequestContextMiddleware
-from app.routers import documents, health
+from app.routers import documents, health, rules
 from app.schemas import ErrorDetail, ErrorResponse
+from app.services.rulebook import RulebookService
 
 configure_logging()
 logger = structlog.get_logger("app.lifespan")
@@ -30,6 +31,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     policy = ResiliencePolicy.from_settings()
     app.state.llm_client = build_llm_client(policy)
     app.state.embedder = build_embedder(policy)
+    app.state.rulebook = RulebookService(
+        async_session_factory, app.state.llm_client, app.state.embedder
+    )
     logger.info(
         "startup_complete",
         app_env=settings.app_env,
@@ -84,6 +88,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
     app.include_router(health.router)
     app.include_router(documents.router)
+    app.include_router(rules.router)
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:

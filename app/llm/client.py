@@ -126,6 +126,8 @@ class OpenAIClient:
         options: dict[str, Any] = {
             "model": settings.llm_model,
             "api_key": settings.openai_api_key,
+            # The Responses API: reasoning models only accept function tools there.
+            "use_responses_api": True,
             "max_retries": 0,
             # The SDK timeout is a backstop; ResiliencePolicy's fires first.
             "timeout": settings.llm_timeout_seconds + 5,
@@ -146,11 +148,11 @@ class OpenAIClient:
         usage = _usage(response)
         self._log(name, latency_ms, usage)
 
-        refusal = response.additional_kwargs.get("refusal")
+        refusal = _refusal(response)
         if refusal:
-            raise LLMOutputError(f"{name}: the model refused: {refusal}", raw=str(refusal))
+            raise LLMOutputError(f"{name}: the model refused: {refusal}", raw=refusal)
         raw = response.text if isinstance(response, AIMessage) else str(response.content)
-        if response.response_metadata.get("finish_reason") == "length":
+        if _truncated(response):
             raise LLMOutputError(f"{name}: the answer was cut off (token limit)", raw=raw)
         try:
             value = schema.model_validate_json(raw)
@@ -188,6 +190,27 @@ class OpenAIClient:
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
         )
+
+
+def _refusal(response: BaseMessage) -> str | None:
+    """A refusal, as Chat Completions (additional_kwargs) or the Responses API
+    (a "refusal" content block) reports it."""
+    refusal = response.additional_kwargs.get("refusal")
+    if refusal:
+        return str(refusal)
+    if isinstance(response.content, list):
+        for block in response.content:
+            if isinstance(block, dict) and block.get("type") == "refusal":
+                return str(block.get("refusal") or "refused")
+    return None
+
+
+def _truncated(response: BaseMessage) -> bool:
+    metadata = response.response_metadata
+    if metadata.get("finish_reason") == "length":
+        return True
+    details = metadata.get("incomplete_details") or {}
+    return metadata.get("status") == "incomplete" and details.get("reason") == "max_output_tokens"
 
 
 def _usage(response: BaseMessage) -> Usage:

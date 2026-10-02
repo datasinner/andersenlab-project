@@ -1,8 +1,9 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ErrorDetail(BaseModel):
@@ -82,3 +83,40 @@ class SectionOut(BaseModel):
     page_end: int
     text: str
     children: list[SectionChild]
+
+
+class CompileRequest(BaseModel):
+    port: str = Field(min_length=1, max_length=100)
+    document_id: UUID | None = None
+    charge_ids: list[str] | None = Field(
+        default=None, description="Compile only these charges (ids from the catalogue)."
+    )
+    include_all: bool = Field(
+        default=False, description="Compile every charge, not only those a vessel routinely pays."
+    )
+    refresh: bool = Field(default=False, description="Recompile rules that are already cached.")
+
+
+class CompiledRuleOut(BaseModel):
+    charge_id: str
+    name: str
+    status: str
+    from_cache: bool
+    revisions: int
+    issues: list[str]
+    review_notes: list[str]
+    sections_read: list[str]
+    research_notes: str
+    model: str | None
+    compiled_at: datetime | None
+    error: str | None
+    rule: dict[str, Any] | None
+
+
+class RulebookOut(BaseModel):
+    document_id: UUID
+    port: str
+    prompt_version: str
+    prompt_tokens: int
+    completion_tokens: int
+    rules: list[CompiledRuleOut]
