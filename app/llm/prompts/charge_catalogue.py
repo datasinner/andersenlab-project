@@ -20,8 +20,10 @@ or companies rather than a vessel.
 - trigger: "per_call" when raised once for a vessel's call or visit; "per_service" when raised \
 for each marine service performed (each entry, departure or shift); "per_period" when raised \
 for time spent, such as per day or per month, outside a call; "on_request" when raised only \
-if the service is requested or an incident occurs (equipment hire, emergency services, \
-cancellations, late notices); "licence_or_permit" for licences, permits and registrations.
+if the vessel books or uses a service beyond an ordinary call (drydocks, slipways, floating \
+cranes, surveys, inspections, certificates, equipment hire, supplies) or an incident occurs \
+(emergencies, cancellations, late notices); "licence_or_permit" for licences, permits and \
+registrations.
 - description: one sentence on what the charge is for and how it is calculated.
 
 A surcharge, reduction, exemption or minimum is part of the charge it modifies, not a charge of \
@@ -35,4 +37,4 @@ USER = """\
 Outline (ref | title | opening text):
 $outline"""
 
-PROMPT = PromptTemplate(name="charge_catalogue", version="1", system=SYSTEM, user=USER)
+PROMPT = PromptTemplate(name="charge_catalogue", version="2", system=SYSTEM, user=USER)

@@ -73,6 +73,9 @@ async def critique(state: CompileState, *, llm: LLMClient) -> dict:
         completion_tokens=result.usage.completion_tokens,
     )
     update: dict = {"critique": review, "review_notes": review.minor, "steps": [step]}
+    best_issues = state.get("best_issues")
+    if state.get("best_rule") is None or len(review.blocking) < len(best_issues or []):
+        update.update(best_rule=rule, best_issues=review.blocking)
     if review.blocking:
         update.update(feedback=review.blocking, revisions=state.get("revisions", 0) + 1)
     else:

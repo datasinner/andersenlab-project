@@ -18,7 +18,7 @@ from pathlib import Path
 
 from app.db import async_session_factory, engine
 from app.errors import AppError
-from app.llm.client import build_llm_client
+from app.llm.client import build_llm_clients
 from app.llm.embeddings import build_embedder
 from app.llm.resilience import LLMConfigurationError, ResiliencePolicy
 from app.logging_conf import configure_logging
@@ -30,7 +30,7 @@ async def main(args: argparse.Namespace) -> int:
     configure_logging()
     policy = ResiliencePolicy.from_settings()
     try:
-        llm = build_llm_client(policy)
+        _, llm = build_llm_clients(policy)  # offline work uses the compile model
         embedder = build_embedder(policy)
     except LLMConfigurationError as exc:
         print(f"error: {exc}", file=sys.stderr)

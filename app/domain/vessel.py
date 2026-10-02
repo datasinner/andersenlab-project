@@ -116,45 +116,49 @@ class VesselCall(BaseModel):
         """Build a VesselCall from either the canonical shape
         ({"vessel": ..., "call": ...}) or the sectioned profile shape
         ({"vessel_metadata", "technical_specs", "operational_data"})."""
-        sectioned_keys = {"vessel_metadata", "technical_specs", "operational_data"}
-        if sectioned_keys & data.keys():
-            vessel_call = cls._from_sectioned_profile(data)
-        else:
-            vessel_call = cls.model_validate(data)
+        vessel_call = cls.model_validate(profile_to_canonical(data))
         if port:
             vessel_call.call.port = port
         return vessel_call
 
-    @classmethod
-    def _from_sectioned_profile(cls, data: Mapping[str, Any]) -> "VesselCall":
-        metadata = dict(data.get("vessel_metadata") or {})
-        specs = dict(data.get("technical_specs") or {})
-        operations = dict(data.get("operational_data") or {})
 
-        vessel = {
-            "name": metadata.pop("name", None),
-            "flag": metadata.pop("flag", None),
-            "built_year": metadata.pop("built_year", None),
-            "vessel_type": specs.pop("type", None),
-            "gross_tonnage": specs.pop("gross_tonnage", None),
-            "net_tonnage": specs.pop("net_tonnage", None),
-            "deadweight": specs.pop("dwt", None),
-            "loa_m": specs.pop("loa_meters", None),
-            "beam_m": specs.pop("beam_meters", None),
-            "draft_m": _first_positive(specs.pop("draft_sw_s_w_t", None)),
+def profile_to_canonical(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Map a profile onto the canonical {"vessel": ..., "call": ...} shape
+    without validating it, so it can be merged with other sources first."""
+    sectioned_keys = {"vessel_metadata", "technical_specs", "operational_data"}
+    if not sectioned_keys & data.keys():
+        return {
+            "vessel": dict(data.get("vessel") or {}),
+            "call": dict(data.get("call") or {}),
         }
-        call = {
-            "arrival": operations.pop("arrival_time", None),
-            "departure": operations.pop("departure_time", None),
-            "days_alongside": operations.pop("days_alongside", None),
-            "activity": operations.pop("activity", None),
-            "cargo_tonnes": operations.pop("cargo_quantity_mt", None),
-            "num_operations": operations.pop("num_operations", None),
-            "num_holds": operations.pop("num_holds", None),
-            "additional": _without_nulls(operations),
-        }
-        vessel["additional"] = _without_nulls(metadata | specs)
-        return cls.model_validate({"vessel": vessel, "call": call})
+    metadata = dict(data.get("vessel_metadata") or {})
+    specs = dict(data.get("technical_specs") or {})
+    operations = dict(data.get("operational_data") or {})
+
+    vessel = {
+        "name": metadata.pop("name", None),
+        "flag": metadata.pop("flag", None),
+        "built_year": metadata.pop("built_year", None),
+        "vessel_type": specs.pop("type", None),
+        "gross_tonnage": specs.pop("gross_tonnage", None),
+        "net_tonnage": specs.pop("net_tonnage", None),
+        "deadweight": specs.pop("dwt", None),
+        "loa_m": specs.pop("loa_meters", None),
+        "beam_m": specs.pop("beam_meters", None),
+        "draft_m": _first_positive(specs.pop("draft_sw_s_w_t", None)),
+    }
+    call = {
+        "arrival": operations.pop("arrival_time", None),
+        "departure": operations.pop("departure_time", None),
+        "days_alongside": operations.pop("days_alongside", None),
+        "activity": operations.pop("activity", None),
+        "cargo_tonnes": operations.pop("cargo_quantity_mt", None),
+        "num_operations": operations.pop("num_operations", None),
+        "num_holds": operations.pop("num_holds", None),
+        "additional": _without_nulls(operations),
+    }
+    vessel["additional"] = _without_nulls(metadata | specs)
+    return {"vessel": _without_nulls(vessel), "call": _without_nulls(call)}
 
 
 def _first_positive(values: Any) -> Any:
@@ -232,6 +236,10 @@ def resolve_quantities(vessel_call: VesselCall) -> ResolvedQuantities:
         values[Basis.TIME_IN_PORT_HOURS] = time_in_port_days * _HOURS_PER_DAY
         assumptions[Basis.TIME_IN_PORT_DAYS] = time_in_port_note
         assumptions[Basis.TIME_IN_PORT_HOURS] = time_in_port_note
+
+    if Basis.PASSENGERS not in values:
+        values[Basis.PASSENGERS] = Decimal(0)
+        assumptions[Basis.PASSENGERS] = "No passengers stated; none assumed."
 
     if call.num_services is not None:
         values[Basis.NUM_SERVICES] = Decimal(call.num_services)

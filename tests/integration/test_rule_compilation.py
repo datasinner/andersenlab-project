@@ -21,7 +21,7 @@ from app.domain.vessel import VesselCall, resolve_quantities
 from app.llm.client import FakeLLMClient
 from app.llm.embeddings import FakeEmbedder
 from app.llm.resilience import LLMUnavailableError
-from app.models import Chunk, CompiledRule, DocumentSection, TariffDocument
+from app.models import CompiledRule, TariffDocument
 from app.retrieval.search import TariffSearch
 from app.rules.engine import evaluate_rule
 from app.services.documents import (
@@ -30,6 +30,7 @@ from app.services.documents import (
     resolve_document_for_port,
 )
 from app.services.rulebook import RulebookService, UnknownChargeError
+from tests.integration.golden import golden_rule
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 LIGHT_DUES = ChargeSpec(
@@ -43,33 +44,8 @@ LIGHT_DUES = ChargeSpec(
 APPROVED = {"issues": []}
 
 
-async def _section_chunks(ref: str) -> dict[int, str]:
-    async with async_session_factory() as session:
-        rows = await session.execute(
-            select(Chunk.id, Chunk.content)
-            .join(DocumentSection, Chunk.section_id == DocumentSection.id)
-            .where(DocumentSection.ref == ref)
-        )
-        return dict(rows.all())
-
-
 async def _golden_light_dues(rate: str = "117.08") -> dict:
-    """The golden rule, its citations retargeted to the chunk that holds each quote."""
-    rule = json.loads((FIXTURES / "rules" / "durban" / "light_dues.json").read_text())
-    chunks = await _section_chunks("1.1.1")
-
-    def retarget(citation: dict) -> None:
-        quote = " ".join(citation["quote"].split()).casefold()
-        for chunk_id, text in chunks.items():
-            if quote in " ".join(text.split()).casefold():
-                citation["chunk_id"] = chunk_id
-                return
-        raise AssertionError(f"quote not in section 1.1.1: {citation['quote']}")
-
-    for citation in rule["citations"]:
-        retarget(citation)
-    for exemption in rule["exemptions"]:
-        retarget(exemption["citation"])
+    rule = await golden_rule("light_dues", "1.1.1")
     rule["components"][1]["rate"] = rate
     return rule
 
@@ -197,17 +173,46 @@ async def test_unresolved_review_keeps_the_grounded_rule_flagged(ingested_tnpa):
     assert await _cached_rows() == 1
 
 
-async def test_a_rule_that_never_validates_fails_and_is_not_cached(ingested_tnpa):
+async def test_when_revisions_run_out_the_best_reviewed_version_is_kept(ingested_tnpa):
+    def review(*problems: str) -> dict:
+        return {"issues": [{"severity": "blocking", "problem": p} for p in problems]}
+
+    llm = FakeLLMClient()
+    llm.script("research", _submit([]))
+    llm.script(
+        "extract_rule",
+        await _golden_light_dues(),
+        await _golden_light_dues(),
+        await _golden_light_dues(),
+    )
+    llm.script("critique", review("a", "b"), review("c"), review("d", "e", "f"))
+
+    outcome = await _service(llm).compile_charge(await _document(), "Durban", LIGHT_DUES)
+
+    assert outcome.status == "low_confidence"
+    assert outcome.issues == ["c"]  # the second version, with one blocking issue
+
+
+async def test_a_rule_that_never_validates_fails_and_the_failure_is_cached(ingested_tnpa):
     llm = FakeLLMClient()
     llm.script("research", _submit([]))
     llm.script("extract_rule", *[await _golden_light_dues(rate="999.99") for _ in range(3)])
+    service = _service(llm)
+    document = await _document()
 
-    outcome = await _service(llm).compile_charge(await _document(), "Durban", LIGHT_DUES)
+    outcome = await service.compile_charge(document, "Durban", LIGHT_DUES)
 
     assert outcome.status == "failed"
     assert outcome.rule is None
     assert outcome.issues == ["components[1].rate: 999.99 does not appear in the cited text"]
-    assert await _cached_rows() == 0
+    assert await _cached_rows() == 1
+
+    # A calculation doesn't retry it: the failure comes from the cache.
+    calls_before = len(llm.calls)
+    cached = await service.compile_charge(document, "Durban", LIGHT_DUES)
+    assert (cached.status, cached.from_cache, cached.rule) == ("failed", True, None)
+    assert cached.issues == outcome.issues
+    assert len(llm.calls) == calls_before
 
 
 async def test_unreadable_extraction_is_fed_back(ingested_tnpa):

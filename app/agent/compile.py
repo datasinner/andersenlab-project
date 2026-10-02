@@ -5,8 +5,9 @@
                     └───────────────┴───────────────────┘
                      (at most AGENT_MAX_REVISIONS re-extractions)
 
-When revisions run out, the last rule that passed validation is kept and
-flagged low_confidence (the critic's open issues are reported with it); if no
+When revisions run out, the reviewed rule with the fewest blocking issues is
+kept (revising can make a rule worse) and flagged low_confidence with those
+issues; failing a review, the last rule that passed validation; if no
 extraction ever passed validation, the charge fails.
 """
 
@@ -67,11 +68,15 @@ def build_compile_graph(
 
 
 def stop_revising(state: CompileState) -> dict:
-    grounded = state.get("grounded_rule")
-    outcome = "low_confidence" if grounded is not None else "failed"
+    best = state.get("best_rule")
+    if best is not None:
+        rule, issues = best, list(state.get("best_issues") or [])
+    else:
+        rule, issues = state.get("grounded_rule"), list(state.get("feedback") or [])
+    outcome = "low_confidence" if rule is not None else "failed"
     step = AgentStep(
         node="stop_revising",
         charge_id=state["charge"].charge_id,
-        output={"outcome": outcome, "open_issues": state.get("feedback", [])},
+        output={"outcome": outcome, "open_issues": issues},
     )
-    return {"outcome": outcome, "rule": grounded, "steps": [step]}
+    return {"outcome": outcome, "rule": rule, "feedback": issues, "steps": [step]}

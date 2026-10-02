@@ -33,6 +33,7 @@ from app.llm.embeddings import Embedder
 from app.models import (
     ChargeCatalogueEntry,
     Chunk,
+    CompiledRule,
     DocumentSection,
     DocumentStatus,
     TariffDocument,
@@ -241,6 +242,8 @@ class IngestionPipeline:
 
 
 async def _delete_derived_rows(session: AsyncSession, document_id: uuid.UUID) -> None:
+    # Compiled rules cite chunk ids, which a rebuild replaces.
+    await session.execute(delete(CompiledRule).where(CompiledRule.document_id == document_id))
     await session.execute(
         delete(ChargeCatalogueEntry).where(ChargeCatalogueEntry.document_id == document_id)
     )

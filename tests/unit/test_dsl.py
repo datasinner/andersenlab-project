@@ -88,6 +88,20 @@ def test_inconsistent_rules_are_rejected(fields, message):
         make_rule(**fields)
 
 
+def test_deductions_must_name_a_number():
+    component = per_unit(basis="time_in_port_hours", unit_size="24")
+    component["units"]["less"] = "is_working"
+    with pytest.raises(ValidationError, match="neither a number fact nor a Basis quantity"):
+        make_rule(components=[component], facts=[flag("is_working")])
+    component["units"]["less"] = "call_window_days"
+    assert make_rule(components=[component]).components[0].units.less == "call_window_days"
+
+
+def test_an_unpriced_case_needs_a_condition():
+    with pytest.raises(ValidationError):
+        make_rule(components=[per_unit(), {"kind": "unpriced", "id": "u", "label": "U"}])
+
+
 def test_unpriced_rules_need_no_components():
     rule = make_rule(status="on_application", components=[])
     assert rule.components == []
@@ -136,6 +150,21 @@ def test_bands_must_be_ordered(bands, message):
             [
                 {"up_to": "100", "rate": "1", "rounding": "ceil"},
                 {"up_to": "100", "rate": "1", "rounding": "ceil"},
+            ],
+            "must strictly increase",
+        ),
+        (
+            [
+                {"up_to": "100", "rate": "1", "rounding": "ceil"},
+                {"up_to": "50", "width": "50", "rate": "1", "rounding": "ceil"},
+            ],
+            "either up_to or width, not both",
+        ),
+        (
+            [
+                {"up_to": "100", "rate": "1", "rounding": "ceil"},
+                {"up_to": None, "width": "50", "rate": "1", "rounding": "ceil"},
+                {"up_to": "120", "rate": "1", "rounding": "ceil"},
             ],
             "must strictly increase",
         ),

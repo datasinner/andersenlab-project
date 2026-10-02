@@ -22,6 +22,14 @@ present, with conditions that capture when they apply; reductions that may not b
 share an exclusive_group.
 6. Facts have defaults that hold for an ordinary commercial call, and nothing is invented that \
 the excerpts don't support.
+7. The charge applies only to the calls the tariff levies it on: a charge for vessels that use \
+a drydock or slipway, request a survey, are small or pleasure vessels, lie at particular berths, \
+carry passengers or don't handle cargo has applies_when conditions for each requirement the \
+tariff names, with defaults that hold for an ordinary merchant call. The standard marine \
+services of an ordinary call (pilotage, tug assistance, berthing, running of lines) have none.
+8. A charge the excerpts give rates for has status "priced"; cases they leave to agreement or \
+application are "unpriced" components with conditions, not a reason to leave the whole charge \
+unpriced.
 
 The example evaluation shows what the engine computes for one illustrative vessel. Use it to \
 spot structural mistakes, not to judge that vessel.
@@ -59,4 +67,4 @@ $excerpts"""
 # The semantics text is fixed; its $quantities placeholder is filled at render time.
 SYSTEM = SYSTEM.replace("$semantics", RULE_SEMANTICS)
 
-PROMPT = PromptTemplate(name="critique", version="3", system=SYSTEM, user=USER)
+PROMPT = PromptTemplate(name="critique", version="6", system=SYSTEM, user=USER)

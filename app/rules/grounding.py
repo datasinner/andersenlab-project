@@ -52,7 +52,7 @@ def check_grounding(rule: ChargeRule, chunk_texts: Mapping[int, str]) -> list[Gr
             issues.append(GroundingIssue(path, f"cites unknown chunk {citation.chunk_id}"))
             continue
         cited_texts.append(text)
-        if _normalize(citation.quote) not in _normalize(text):
+        if not quote_in(citation.quote, text):
             issues.append(GroundingIssue(path, f"quote not found in chunk {citation.chunk_id}"))
 
     printed = extract_numbers("\n".join(cited_texts))
@@ -63,6 +63,12 @@ def check_grounding(rule: ChargeRule, chunk_texts: Mapping[int, str]) -> list[Gr
             GroundingIssue(path, f"{format_number(value)} does not appear in the cited text")
         )
     return issues
+
+
+def quote_in(quote: str, text: str) -> bool:
+    """Whether `quote` appears in `text`: the same words in the same order,
+    ignoring case, punctuation and typography."""
+    return _normalize(quote) in _normalize(text)
 
 
 def _normalize(text: str) -> str:
@@ -117,6 +123,8 @@ def _numbers(rule: ChargeRule) -> list[tuple[str, Decimal]]:
                 tier_path = f"{path}.tiers[{j}]"
                 if tier.up_to is not None:
                     found.append((f"{tier_path}.up_to", tier.up_to))
+                if tier.width is not None:
+                    found.append((f"{tier_path}.width", tier.width))
                 found.append((f"{tier_path}.rate", tier.rate))
                 found.append((f"{tier_path}.unit_size", tier.unit_size))
 

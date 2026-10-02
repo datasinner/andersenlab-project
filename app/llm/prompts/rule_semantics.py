@@ -21,11 +21,16 @@ directly; never declare them as facts:
 $quantities
 - A rule whose status is not "priced" reports that status. Otherwise the charge does not apply \
 if all conditions of any exemption hold, or if any applies_when condition fails.
-- Each component whose "when" conditions all hold is evaluated: fixed = amount; per_unit = rate \
-× units (× time units when per_time is set); banded = the first band in the list with \
-lower <= quantity <= upper (bands may share a printed boundary; the earlier band wins), giving \
-its base_fee plus its increment; tiered = each slice of the quantity at its own rate.
-- Units = max(quantity - above, 0) / unit_size, rounded as the rounding says.
+- If an unpriced component's conditions all hold, the charge is reported as not priced for the \
+call (its label says why). Otherwise unpriced components are skipped.
+- Each other component whose "when" conditions all hold is evaluated: fixed = amount; \
+per_unit = rate × units (× time units when per_time is set); banded = the first band in the \
+list with lower <= quantity <= upper (bands may share a printed boundary; the earlier band wins), \
+giving \
+its base_fee plus its increment; tiered = each slice of the quantity at its own rate, a slice \
+ending at its up_to, or width after the previous slice's end.
+- Units = max(quantity - above - less, 0) / unit_size, rounded as the rounding says, where less \
+(optional) names a number fact or quantity to deduct: "the time in port less the hours worked".
 - The components are summed, clamped to minimum and maximum, then multiplied by the multiplier.
 - Each adjustment whose conditions hold adds or subtracts its percentage of the components it \
 targets (after the multiplier); within an exclusive_group only the largest applies.

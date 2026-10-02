@@ -37,6 +37,7 @@ from app.rules.dsl import (
     Rounding,
     TieredFee,
     Units,
+    UnpricedCase,
 )
 
 FactValue = bool | Decimal | str
@@ -146,8 +147,17 @@ class _Evaluation:
                     reason=f"Not applicable: requires {self._describe(condition)}",
                 )
 
+        for component in rule.components:
+            if isinstance(component, UnpricedCase) and self._all_hold(component.when):
+                return self._result(
+                    LineItemStatus.NOT_PRICED,
+                    reason=f"{component.label}: the document gives no rate for this case.",
+                )
+
         component_amounts: dict[str, Decimal] = {}
         for component in rule.components:
+            if isinstance(component, UnpricedCase):
+                continue
             if not self._all_hold(component.when):
                 self.formula.append(f"{component.label}: not applicable to this call")
                 continue
@@ -222,7 +232,7 @@ class _Evaluation:
             return self._banded(component)
         if isinstance(component, TieredFee):
             return self._tiered(component)
-        raise RuleEvaluationError(f"Unknown component kind: {component!r}")  # pragma: no cover
+        raise RuleEvaluationError(f"Cannot price component {component!r}")  # pragma: no cover
 
     def _per_unit(self, component: PerUnitFee) -> Decimal:
         count, count_expression = self._units(component.units)
@@ -275,8 +285,8 @@ class _Evaluation:
         amount = Decimal(0)
         steps: list[str] = []
         previous_bound = Decimal(0)
-        for tier in component.tiers:
-            upper = quantity if tier.up_to is None else min(quantity, tier.up_to)
+        for tier, end in zip(component.tiers, component.tier_ends(), strict=True):
+            upper = quantity if end is None else min(quantity, end)
             slice_size = upper - previous_bound
             if slice_size <= 0:
                 break
@@ -288,21 +298,29 @@ class _Evaluation:
                 f"{format_number(tier.unit_size)}: {format_number(count)} × "
                 f"{format_number(tier.rate)} = {format_number(charge)}"
             )
-            if tier.up_to is None:
+            if end is None:
                 break
-            previous_bound = tier.up_to
+            previous_bound = end
         steps.append(f"total {format_number(amount)}")
         self.formula.append(f"{component.label}: " + "; ".join(steps))
         return amount
 
     def _units(self, units: Units) -> tuple[Decimal, str]:
         quantity = self._quantity(units.basis)
-        measured = max(quantity - units.above, Decimal(0))
+        deductions = [format_number(units.above)] if units.above else []
+        offset = units.above
+        if units.less is not None:
+            less = self._subject(units.less)
+            if not isinstance(less, Decimal):
+                raise RuleEvaluationError(f"'{units.less}' must be a number to be deducted")
+            offset += less
+            deductions.append(f"{format_number(less)} {units.less}")
+        measured = max(quantity - offset, Decimal(0))
         count = _round_units(measured / units.unit_size, units.rounding)
 
         operand = format_number(quantity)
-        if units.above:
-            operand = f"({operand} − {format_number(units.above)})"
+        if deductions:
+            operand = f"({operand} − {' − '.join(deductions)})"
         if units.unit_size != 1:
             operand = f"{operand} / {format_number(units.unit_size)}"
         if units.rounding == Rounding.PRO_RATA:

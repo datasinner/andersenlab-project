@@ -7,10 +7,11 @@ concurrently. A cached rule is reused unless refresh is asked for; the cache
 key includes the rule schema version and the prompt versions, so changing
 either recompiles.
 
-Rules that pass validation are cached, including those the critic still had
-issues with after the last revision (flagged low_confidence, with the issues
-kept), so a calculation never silently recompiles and changes its answer.
-Rules that never passed validation are not cached.
+Every outcome is cached: approved rules, rules the critic still had issues
+with after the last revision (flagged low_confidence, with the issues kept),
+and failures (no rule passed validation), so a calculation never silently
+recompiles and changes its answer. Only provider errors are not cached:
+they say nothing about the charge.
 """
 
 import asyncio
@@ -65,6 +66,7 @@ class CompileOutcome:
     model: str | None = None
     compiled_at: datetime | None = None
     error: str | None = None
+    section_refs: list[str] = field(default_factory=list)  # the charge's own sections
 
 
 @dataclass(frozen=True)
@@ -126,7 +128,7 @@ class RulebookService:
         if not refresh:
             cached = await self.cached_rule(document.id, port_key, charge.charge_id)
             if cached is not None:
-                return outcome_from_cache(cached, charge.name)
+                return outcome_from_cache(cached, charge.name, charge.section_refs)
 
         log = logger.bind(charge_id=charge.charge_id, port=port_key)
         tools = ToolExecutor(self._sessions, self._search, document.id)
@@ -153,6 +155,7 @@ class RulebookService:
                 sections_read=tools.sections_read,
                 latency_ms=int((time.monotonic() - started) * 1000),
                 error=f"{type(exc).__name__}: {exc}",
+                section_refs=charge.section_refs,
             )
 
         steps: list[AgentStep] = final.get("steps", [])
@@ -173,6 +176,7 @@ class RulebookService:
             usage=_usage(steps),
             latency_ms=int((time.monotonic() - started) * 1000),
             model=self._llm.model_name,
+            section_refs=charge.section_refs,
         )
         log.info(
             "rule_compiled",
@@ -182,8 +186,7 @@ class RulebookService:
             prompt_tokens=outcome.usage.prompt_tokens,
             completion_tokens=outcome.usage.completion_tokens,
         )
-        if outcome.rule is not None and status in ("approved", "low_confidence"):
-            await self._store(document.id, port_key, outcome)
+        await self._store(document.id, port_key, outcome)
         return outcome
 
     async def cached_rule(
@@ -222,7 +225,6 @@ class RulebookService:
         ]
 
     async def _store(self, document_id: uuid.UUID, port_key: str, outcome: CompileOutcome) -> None:
-        assert outcome.rule is not None
         async with self._sessions() as session:
             await session.execute(
                 delete(CompiledRule).where(
@@ -238,7 +240,7 @@ class RulebookService:
                     document_id=document_id,
                     port_key=port_key,
                     charge_id=outcome.charge_id,
-                    rule=outcome.rule.model_dump(mode="json"),
+                    rule=outcome.rule.model_dump(mode="json") if outcome.rule else None,
                     rule_schema_version=RULE_SCHEMA_VERSION,
                     prompt_version=prompt_version(),
                     model=outcome.model or "unknown",
@@ -268,13 +270,15 @@ def _current_rules(document_id: uuid.UUID, port_key: str):
     )
 
 
-def outcome_from_cache(row: CompiledRule, name: str | None = None) -> CompileOutcome:
-    rule = ChargeRule.model_validate(row.rule)
+def outcome_from_cache(
+    row: CompiledRule, name: str | None = None, section_refs: list[str] | None = None
+) -> CompileOutcome:
+    rule = ChargeRule.model_validate(row.rule) if row.rule is not None else None
     verdict = row.critic_verdict or {}
     return CompileOutcome(
         charge_id=row.charge_id,
-        name=name or rule.name,
-        status=verdict.get("outcome", "approved"),
+        name=name or (rule.name if rule else row.charge_id),
+        status=verdict.get("outcome", "approved" if rule else "failed"),
         rule=rule,
         from_cache=True,
         issues=verdict.get("issues", []),
@@ -284,6 +288,7 @@ def outcome_from_cache(row: CompiledRule, name: str | None = None) -> CompileOut
         research_notes=verdict.get("research_notes", ""),
         model=row.model,
         compiled_at=row.created_at,
+        section_refs=section_refs or (rule.section_refs if rule else []),
     )
 
 

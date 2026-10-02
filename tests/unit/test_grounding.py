@@ -112,7 +112,8 @@ def test_every_kind_of_number_is_checked():
                 "basis": "gross_tonnage",
                 "tiers": [
                     {"up_to": "8", "rate": "9", "unit_size": "10", "rounding": "ceil"},
-                    {"up_to": None, "rate": "11", "rounding": "ceil"},
+                    {"up_to": None, "width": "17", "rate": "11", "rounding": "ceil"},
+                    {"up_to": None, "rate": "18", "rounding": "ceil"},
                 ],
             },
             per_unit(
@@ -126,4 +127,4 @@ def test_every_kind_of_number_is_checked():
         applies_when=[{"fact": "num_services", "op": "ge", "value": "16"}],
     )
     flagged = sorted(int(message.split()[0]) for _, message in _messages(rule, {1: "Example fee"}))
-    assert flagged == list(range(2, 17))
+    assert flagged == list(range(2, 19))

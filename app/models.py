@@ -212,8 +212,9 @@ class ChargeCatalogueEntry(Base):
 
 
 class CompiledRule(Base):
-    """A ChargeRule the agent extracted for one port, written only after it
-    passed validation and the critic. Bumping the rule schema or a prompt
+    """The outcome of compiling one charge at one port: the ChargeRule (which
+    passed validation; approved or low_confidence), or no rule when no
+    extraction passed validation. Bumping the rule schema or a prompt
     version makes old rows unreachable without a migration."""
 
     __tablename__ = "compiled_rule"
@@ -236,7 +237,9 @@ class CompiledRule(Base):
     )
     port_key: Mapped[str] = mapped_column(String(100), nullable=False)
     charge_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    rule: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Null for a compilation that failed validation; cached so calculations
+    # don't retry it until a refresh.
+    rule: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     rule_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)

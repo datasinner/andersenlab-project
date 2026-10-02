@@ -14,6 +14,7 @@ from app.llm.client import (
     OpenAIClient,
     Usage,
     build_llm_client,
+    build_llm_clients,
 )
 from app.llm.resilience import LLMConfigurationError, LLMUnavailableError, ResiliencePolicy
 
@@ -227,3 +228,15 @@ async def test_fake_tool_turn():
     assert turn.message.content == "done"
     assert fake.calls[0].tools == [LookUp]
     fake.shutdown()
+
+
+def test_compile_client_is_shared_unless_a_compile_model_is_set(monkeypatch):
+    policy = ResiliencePolicy.from_settings()
+    runtime, compile_client = build_llm_clients(policy)
+    assert runtime is compile_client
+
+    monkeypatch.setattr(settings, "llm_provider", "openai")
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(settings, "llm_compile_model", "gpt-stronger")
+    runtime, compile_client = build_llm_clients(policy)
+    assert (runtime.model_name, compile_client.model_name) == (settings.llm_model, "gpt-stronger")

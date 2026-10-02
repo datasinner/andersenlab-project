@@ -29,7 +29,7 @@ from pydantic import (
 from app.domain.numbers import parse_number
 from app.domain.vessel import Basis
 
-RULE_SCHEMA_VERSION = 2
+RULE_SCHEMA_VERSION = 5
 
 
 def _to_decimal(value: object) -> object:
@@ -99,13 +99,16 @@ class Citation(_Model):
 
 
 class Units(_Model):
-    """How many billable units of a quantity: max(quantity - above, 0) /
-    unit_size, rounded."""
+    """How many billable units of a quantity: max(quantity - above - less, 0)
+    / unit_size, rounded."""
 
     basis: Basis
     unit_size: PositiveAmount = Decimal(1)
     rounding: Rounding
     above: NonNegativeAmount = Decimal(0)
+    # A numeric fact or quantity to deduct as well: "the time in port less
+    # the hours worked".
+    less: Identifier | None = None
 
 
 class _Component(_Model):
@@ -164,12 +167,26 @@ class BandedFee(_Component):
 
 
 class Tier(_Model):
-    """Rate for the slice of the quantity up to `up_to` (None = the rest)."""
+    """Rate for one slice of the quantity. The slice ends at `up_to` when the
+    tariff prints the bound ("up to 35 300 tons"), or `width` after the
+    previous one when it prints the slice's size ("the following 90 days").
+    Neither means the rest (only the last tier)."""
 
     up_to: NonNegativeAmount | None
+    width: PositiveAmount | None = None
     rate: NonNegativeAmount
     unit_size: PositiveAmount = Decimal(1)
     rounding: Rounding
+
+    @model_validator(mode="after")
+    def _one_bound(self) -> "Tier":
+        if self.up_to is not None and self.width is not None:
+            raise ValueError("a tier gives either up_to or width, not both")
+        return self
+
+    @property
+    def bounded(self) -> bool:
+        return self.up_to is not None or self.width is not None
 
 
 class TieredFee(_Component):
@@ -182,16 +199,44 @@ class TieredFee(_Component):
 
     @model_validator(mode="after")
     def _tiers_are_ordered(self) -> "TieredFee":
-        bounds = [tier.up_to for tier in self.tiers]
-        if any(bound is None for bound in bounds[:-1]):
+        if any(not tier.bounded for tier in self.tiers[:-1]):
             raise ValueError(f"component '{self.id}': only the last tier may be unbounded")
-        finite = [bound for bound in bounds if bound is not None]
+        ends = self.tier_ends()
+        finite = [end for end in ends if end is not None]
         if finite != sorted(finite) or len(set(finite)) != len(finite):
             raise ValueError(f"component '{self.id}': tier bounds must strictly increase")
         return self
 
+    def tier_ends(self) -> list[Decimal | None]:
+        """Where each tier's slice ends (None = unbounded)."""
+        ends: list[Decimal | None] = []
+        previous = Decimal(0)
+        for tier in self.tiers:
+            if tier.up_to is not None:
+                end: Decimal | None = tier.up_to
+            elif tier.width is not None:
+                end = previous + tier.width
+            else:
+                end = None
+            ends.append(end)
+            if end is not None:
+                previous = end
+        return ends
 
-Component = Annotated[FixedFee | PerUnitFee | BandedFee | TieredFee, Field(discriminator="kind")]
+
+class UnpricedCase(_Component):
+    """A case the tariff leaves unpriced ("payable in terms of a special
+    agreement", "on application") within a charge that is otherwise priced.
+    When its conditions hold, the charge is reported as not priced for the
+    call instead of being priced by the other components."""
+
+    kind: Literal["unpriced"]
+    when: list[Condition] = Field(min_length=1)
+
+
+Component = Annotated[
+    FixedFee | PerUnitFee | BandedFee | TieredFee | UnpricedCase, Field(discriminator="kind")
+]
 
 
 class Adjustment(_Model):
@@ -275,6 +320,15 @@ class ChargeRule(_Model):
                     f"condition refers to '{condition.fact}', which is neither a declared fact "
                     "nor a Basis quantity"
                 )
+
+        numeric = {fact.name for fact in self.facts if fact.type == "number"}
+        numeric |= {basis.value for basis in Basis}
+        for units in self.all_units():
+            if units.less is not None and units.less not in numeric:
+                raise ValueError(
+                    f"units deduct '{units.less}', which is neither a number fact nor a Basis "
+                    "quantity"
+                )
         return self
 
     def all_conditions(self) -> list[Condition]:
@@ -286,6 +340,17 @@ class ChargeRule(_Model):
         for adjustment in self.adjustments:
             conditions.extend(adjustment.when)
         return conditions
+
+    def all_units(self) -> list[Units]:
+        found = [self.multiplier] if self.multiplier else []
+        for component in self.components:
+            if isinstance(component, PerUnitFee):
+                found.append(component.units)
+                if component.per_time is not None:
+                    found.append(component.per_time)
+            elif isinstance(component, BandedFee):
+                found.extend(band.increment.units for band in component.bands if band.increment)
+        return found
 
     def fact_spec(self, name: str) -> FactSpec | None:
         for fact in self.facts:

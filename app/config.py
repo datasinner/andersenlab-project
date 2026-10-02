@@ -17,6 +17,10 @@ class Settings(BaseSettings):
 
     llm_provider: Literal["openai", "fake"] = "openai"
     llm_model: str = "gpt-5.6-luna"
+    # Model for the offline, cached work: the ingestion profile and catalogue,
+    # and rule compilation. Empty = LLM_MODEL. A stronger model here costs more
+    # once per document and port, and makes compiled rules more reliable.
+    llm_compile_model: str | None = None
     openai_api_key: str | None = None
     embedding_model: str = "text-embedding-3-small"
     # Must match the vector(n) column created by the first migration.
@@ -25,7 +29,8 @@ class Settings(BaseSettings):
     llm_temperature: float | None = Field(default=0.0, ge=0.0, le=2.0)
     # Only for reasoning models; None leaves the model's default.
     llm_reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
-    llm_timeout_seconds: int = Field(default=60, gt=0)
+    # Extracting a large rule (many reductions and surcharges) can take over a minute.
+    llm_timeout_seconds: int = Field(default=120, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)
     llm_max_concurrency: int = Field(default=8, gt=0)
 

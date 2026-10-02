@@ -104,41 +104,42 @@ Two design points matter most:
 
 ## 4. Calculation agent
 
+Two LangGraph graphs. The calculation graph prices one vessel call; for every charge whose rule is
+not yet cached it runs the compile graph, in parallel.
+
 ```mermaid
 flowchart TD
-  start(["POST /v1/calculations"]) --> norm["normalize_input<br/>profile JSON and/or NL query → VesselCall"]
-  norm --> doc["resolve_document<br/>document covering port + arrival date"]
-  doc --> screen["screen_charges<br/>catalogue → candidates<br/>excluded · not applicable (with reason)"]
-  screen -->|"Send() · one branch per charge"| load
-
-  subgraph per_charge["Charge sub-graph (runs concurrently for each candidate)"]
-    direction TB
-    load{"load_rule<br/>cached for<br/>document + port?"}
-    research["research (ReAct)<br/>search_tariff · read_section<br/>lookup_definition · list_sections"]
-    extract["extract_rule<br/>Structured Outputs → ChargeRule<br/>every number cited"]
-    validate{"validate_rule<br/>schema + grounding"}
-    facts["resolve_facts<br/>quantities: code<br/>qualitative facts: LLM"]
-    compute["compute<br/>rule engine · Decimal"]
-    critique{"critique<br/>LLM reviews rule + trace<br/>against the sources"}
-    result["line item · not applicable · not priced"]
-
-    load -->|"miss"| research --> extract --> validate
-    validate -->|"invalid / ungrounded<br/>≤ N revisions"| extract
-    validate -->|"ok"| facts
-    load -->|"hit"| facts
-    facts --> compute --> critique
-    critique -->|"revise · ≤ N revisions"| extract
-    critique -->|"approved → write rule to cache"| result
-  end
-
-  result --> agg["aggregate<br/>order · total · warnings<br/>persist calculation + agent steps"]
-  agg --> done(["response with line items,<br/>formulas, citations, assumptions"])
+  start(["POST /v1/calculations"]) --> norm["normalize_input<br/>profile JSON and/or NL query → VesselCall<br/>(NL: one structured LLM call)"]
+  norm --> doc["resolve_document<br/>document covering the port<br/>and in force on the arrival date"]
+  doc --> screen["screen_charges (code)<br/>catalogue payer + trigger →<br/>candidates · on request · excluded"]
+  screen -->|"Send() · one branch per candidate"| compile["compile_charge<br/>cached rule, or the compile graph"]
+  compile --> facts["resolve_facts<br/>every rule's facts in one batched LLM call<br/>request overrides win"]
+  facts --> compute["compute<br/>rule engine · Decimal · formula trace"]
+  compute --> agg["aggregate<br/>line items · not applicable · not priced<br/>on request · excluded · failed<br/>persist calculation + agent steps"]
+  agg --> done(["response"])
 ```
 
-On a cache hit the critic is skipped by default (`AGENT_CRITIC_ON_CACHE_HIT=false`), because the
-rule was already approved. Facts are still resolved per call, since they depend on the vessel. When
-revisions run out, the item is kept and flagged `low_confidence` with the critic's issues, never
-silently dropped.
+The compile graph, for one charge at one port (rendered by LangGraph from `app/agent/compile.py`):
+
+```mermaid
+flowchart TD
+  start(["charge + port"]) --> research["research (ReAct)<br/>catalogue sections pre-opened ·<br/>SearchTariff · ReadSection ·<br/>LookupDefinition · ListSections →<br/>SubmitEvidence"]
+  research --> extract["extract_rule<br/>Structured Outputs → ChargeRule<br/>every number cited"]
+  extract --> validate{"validate_rule<br/>schema + grounding"}
+  validate -->|"problems · ≤ N revisions"| extract
+  validate -->|"ok"| critique{"critique<br/>LLM reviews rule + engine example<br/>blocking / minor issues"}
+  critique -->|"blocking · ≤ N revisions"| extract
+  critique -->|"none blocking → approved, cached"| done(["rule"])
+  validate -->|"revisions used up"| stop["stop_revising<br/>last grounded rule, low_confidence<br/>(or failed if none)"]
+  critique -->|"revisions used up"| stop
+  stop --> done
+```
+
+Applicability lives in the rules, not in a screening call: a rule's `applies_when`, exemptions and
+conditional components decide whether it charges this call, from the facts the batched
+`resolve_facts` call decides (berth dues, for example, require a vessel that is not handling cargo).
+A warm request with profile JSON therefore makes one LLM call. Rules flagged `low_confidence` are
+priced and marked so (`confidence: low`, with the reviewer's open issues), never silently dropped.
 
 ### Why this is agentic RAG and not a fixed pipeline
 

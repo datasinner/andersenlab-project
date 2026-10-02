@@ -37,7 +37,8 @@ notes.
 component with one band per row, listed by ascending lower bound; set the increment's "above" \
 to the threshold the tariff names.
 8. Successive slices at different rates ("the first 1 000 tons at X, the following 2 000 tons \
-at Y") are a tiered component.
+at Y") are a tiered component. Give each tier's end as up_to when the tariff prints the bound, \
+or as width when it prints the slice's size ("the next 90 days"); never add numbers up.
 9. Different rates for different kinds of vessel are separate components, each with a "when" \
 condition.
 10. Exemptions go in exemptions. Percentage reductions and surcharges go in adjustments, each \
@@ -48,12 +49,22 @@ exclusive_group. A surcharge on only part of the fee lists those component ids i
 engine supplies (listed below). Declare each fact with a snake_case name, a type, a description \
 in the tariff's own words, and as default_value the value that holds for an ordinary commercial \
 call when the vessel data says nothing. Numbers in condition values are strings.
-13. If the tariff gives no rate ("on application", "quoted on request"), set status \
+13. If the tariff gives no rate at all ("on application", "quoted on request"), set status \
 "on_application". If the rate is set outside this document, set status \
 "not_priced_in_document". If the document levies this charge only at other ports, set status \
-"not_applicable_at_port". None of these needs components.
+"not_applicable_at_port". None of these needs components. When the tariff prices some cases \
+and leaves others to agreement or application, keep status "priced" and add an "unpriced" \
+component, with a "when" condition, for each case it leaves unpriced.
 14. Describe the whole charge at this port (every band, reduction and surcharge), not only the \
 case that matches one vessel.
+15. If the tariff levies the charge only on some calls (vessels that use a drydock or slipway, \
+request a survey, are small or pleasure vessels, lie at particular berths, carry passengers, \
+don't handle cargo), put that in applies_when, with facts whose default is their value for an \
+ordinary merchant call. When the tariff names conditions together ("occupying a berth and not \
+handling cargo"), make each one a separate condition. The standard marine services of an \
+ordinary call (pilotage, tug assistance, berthing, running of lines) need no such condition.
+16. A period or quantity reduced by something the call supplies ("the time in port less the \
+hours worked") deducts a number fact with units.less.
 
 $semantics
 
@@ -74,4 +85,4 @@ $feedback"""
 
 SYSTEM = SYSTEM.replace("$semantics", RULE_SEMANTICS)
 
-PROMPT = PromptTemplate(name="extract_rule", version="3", system=SYSTEM, user=USER)
+PROMPT = PromptTemplate(name="extract_rule", version="6", system=SYSTEM, user=USER)

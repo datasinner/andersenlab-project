@@ -86,6 +86,11 @@ class ResiliencePolicy:
                 cause: Exception = exc
             except openai.APIStatusError as exc:
                 cause = exc
+                if exc.status_code == 429 and _error_code(exc) == "insufficient_quota":
+                    # Exhausted credit, not a rate limit: retrying can't help.
+                    raise LLMUnavailableError(
+                        f"{name}: the provider account has no credits left"
+                    ) from exc
                 if exc.status_code == 429:
                     error = LLMRateLimitedError(f"{name}: provider rate limit exceeded")
                     retryable = True
@@ -115,3 +120,12 @@ class ResiliencePolicy:
     def _backoff_seconds(self, attempt: int) -> float:
         base = self.backoff_base_seconds * (2 ** (attempt - 1))
         return base + random.uniform(0, base * 0.25)
+
+
+def _error_code(exc: openai.APIStatusError) -> str | None:
+    code = getattr(exc, "code", None)
+    if code:
+        return str(code)
+    body = exc.body if isinstance(exc.body, dict) else {}
+    error = body.get("error", body)
+    return error.get("code") if isinstance(error, dict) else None

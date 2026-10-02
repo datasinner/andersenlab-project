@@ -165,8 +165,8 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │       └── health.py
 ├── data/tariffs/                  # bundled tariff PDFs, ingested at startup
 ├── eval/
-│   ├── cases/sudestada_durban.yaml
-│   ├── cases/synthetic_port.yaml
+│   ├── cases/sudestada_durban.json
+│   ├── cases/synthetic_port.json
 │   ├── retrieval_cases.json       # query → expected section refs
 │   ├── run_retrieval_eval.py      # recall@k of hybrid search (make eval-retrieval)
 │   └── run_eval.py                # live end-to-end accuracy report
@@ -207,12 +207,13 @@ All settings live in one `Settings` class in `app/config.py`. Every value appear
 | `DATABASE_URL` | none | `postgresql+asyncpg://...` |
 | `LLM_PROVIDER` | `openai` | `fake` selects the deterministic `FakeClient` + `FakeEmbedder` |
 | `LLM_MODEL` | `gpt-5.6-luna` | extraction and reasoning. **Verify the current model id** |
+| `LLM_COMPILE_MODEL` | empty | model for ingestion and rule compilation (cached, once per document and port); empty = `LLM_MODEL` |
 | `OPENAI_API_KEY` | none | required unless `LLM_PROVIDER=fake` |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | verify the current model id |
 | `EMBEDDING_DIMENSIONS` | `1536` | must match the `vector(n)` column in the migration |
 | `LLM_TEMPERATURE` | `0` | omit the parameter if the chosen model rejects it |
 | `LLM_REASONING_EFFORT` | empty | reasoning models only (`minimal` … `high`); empty keeps the model default |
-| `LLM_TIMEOUT_SECONDS` | `60` | ceiling for one model call |
+| `LLM_TIMEOUT_SECONDS` | `120` | ceiling for one model call (large rule extractions take over a minute) |
 | `LLM_MAX_RETRIES` | `2` | retries on 429/5xx only |
 | `LLM_MAX_CONCURRENCY` | `8` | semaphore size **per worker process** |
 | `AGENT_MAX_TOOL_CALLS` | `8` | per-charge research loop budget |
@@ -281,6 +282,7 @@ class Units(BaseModel):      # how many billable units of a quantity
     unit_size: Decimal = 1   # e.g. 100 (tons), 24 (hours)
     rounding: Rounding
     above: Decimal = 0       # count only the part above this value ("per 100 tons above 50 000")
+    less: str | None         # also deduct a number fact or quantity ("time in port less hours worked")
 
 # Every component has: id; label; when: list[Condition]  (counts only if all hold, e.g. a
 # different rate for vessels at their registered port)
@@ -290,9 +292,10 @@ class PerUnitFee(BaseModel):  kind: Literal["per_unit"]; rate; units: Units
 class Increment(BaseModel):   rate; units: Units
 class Band(BaseModel):        lower; upper: Decimal | None; base_fee; increment: Increment | None   # lower <= q <= upper
 class BandedFee(BaseModel):   kind: Literal["banded"];   basis; bands: list[Band]   # first listed band containing q applies
-class Tier(BaseModel):        up_to: Decimal | None; rate; unit_size; rounding
+class Tier(BaseModel):        up_to | width: Decimal | None; rate; unit_size; rounding   # printed bound, or printed slice size
 class TieredFee(BaseModel):   kind: Literal["tiered"];   basis; tiers: list[Tier]   # marginal: each slice at its own rate
-Component = Annotated[FixedFee | PerUnitFee | BandedFee | TieredFee, Field(discriminator="kind")]
+class UnpricedCase(BaseModel): kind: Literal["unpriced"]; when (required)   # a case left to agreement/application
+Component = Annotated[FixedFee | PerUnitFee | BandedFee | TieredFee | UnpricedCase, Field(discriminator="kind")]
 
 class Condition(BaseModel):   fact: str; op: Literal["eq","ne","lt","le","gt","ge","in"]; value
 class Adjustment(BaseModel):  id; kind: Literal["reduction","surcharge"]; description; percent
@@ -325,7 +328,8 @@ example (towage at Durban) is in `docs/architecture.md`.
 
 1. If `status != "priced"`, return that status with the rule's citation.
 2. If any exemption matches or any `applies_when` condition fails, return `not_applicable` with the
-   condition and citation that decided it.
+   condition and citation that decided it. If an `unpriced` component's conditions hold, return
+   `not_priced_in_document` with its label as the reason.
 3. Evaluate each component in full `Decimal` precision and record a trace step, e.g.
    `ceil(51 300 / 100) = 513 × 117.08 = 60 062.04`.
 4. Sum the components, clamp to `minimum`/`maximum`, then multiply by `multiplier` units.
@@ -374,11 +378,12 @@ Indexes: HNSW on `embedding` (cosine), GIN on `tsv`, `(document_id, section_id)`
 `id`, `document_id FK`, `port_key`, `charge_id`, `rule jsonb`, `rule_schema_version`,
 `prompt_version`, `model`, `critic_verdict jsonb` (outcome, open issues, review notes, revisions,
 sections read, research notes), `created_at`.
-Unique `(document_id, port_key, charge_id, rule_schema_version, prompt_version)`. Only rules that
-passed validation are written: approved ones, and ones the critic still had blocking issues with
-after the last revision (outcome `low_confidence`, issues kept), so a calculation never silently
-recompiles and changes its answer. Bumping a prompt or schema version invalidates the cache without
-a migration.
+Unique `(document_id, port_key, charge_id, rule_schema_version, prompt_version)`. Every outcome
+is written: approved rules; rules the critic still had blocking issues with after the last revision
+(outcome `low_confidence`, the version with the fewest issues, issues kept); and failures (`rule`
+null: no extraction passed validation). So a calculation never silently recompiles and changes its
+answer; `refresh` retries. Provider errors are not cached. Bumping a prompt or schema version
+invalidates the cache without a migration.
 
 ### `calculation`
 `id uuid PK`, `request_id`, `document_id FK`, `port_key`, `vessel_call jsonb`, `query_text`,
@@ -440,16 +445,16 @@ A LangGraph `StateGraph`. The diagrams are in `docs/architecture.md`.
 |---|---|---|
 | `normalize_input` | code + LLM | Maps the profile JSON to `VesselCall`. If a `query` is given, a structured LLM call extracts a `VesselCall` + port from it; JSON fields win over NL ones. Missing GT → `422 INSUFFICIENT_VESSEL_DATA` listing the missing fields. |
 | `resolve_document` | code | Picks the `ready` document whose `ports` match the port (alias match) and whose effective period contains the arrival date, unless `document_id` is given. None → `422 PORT_NOT_COVERED`. |
-| `screen_charges` | code + LLM | Drops catalogue entries whose payer isn't the vessel, or that are licences or permits (reported as `excluded` with the reason). A single LLM call sorts the rest into `candidate` or `not_applicable` (with a reason and citation). It is told to keep anything uncertain as a candidate. |
+| `screen_charges` | code | From the catalogue's payer and trigger: charges paid by cargo or others, and licences/permits, are `excluded`; charges raised only on request or after an incident are listed `on_request` (priced only if the request names them); the rest are candidates. Whether a candidate applies to this call is decided by its own rule (`applies_when`, exemptions, conditional components) against the call's facts — no LLM screening call, so a warm request needs one LLM call in total. |
 | *fan-out* | LangGraph `Send` | One charge sub-graph per candidate, run concurrently under the LLM semaphore. |
 | `load_rule` | code | Looks up `compiled_rule`. A hit skips straight to `resolve_facts`. |
 | `research` | LLM, ReAct | Tool loop (≤ `AGENT_MAX_TOOL_CALLS`) with the goal: "Collect everything needed to compute *<charge>* at *<port>*: rates, units, bands, minimums, conditions, exemptions, reductions, surcharges, and the definitions they rely on." Ends by calling `submit_evidence(chunk_ids)`. |
 | `extract_rule` | LLM, structured | Evidence chunks → `ChargeRule` for this port. It picks the port's own column, or the "other ports" / "all other ports" column when the port isn't named, and says which in `notes`. Every number cites a chunk and quote. On a revision it also receives the validator or critic feedback. |
 | `validate_rule` | code | Schema checks (contiguous bands, positive unit sizes, known `Basis` values, component ids referenced by adjustments) plus **grounding**: every numeric literal appears in its cited chunk after normalisation. Failure → back to `extract_rule` with the error list. |
-| `resolve_facts` | code + LLM | Quantities come from `VesselCall` (code). The rule's qualitative facts are resolved by one structured LLM call that sees the vessel call, each fact's tariff description and the relevant definitions (e.g. the port's ordinary working hours). It returns `{value, reasoning, source: vessel_data \| tariff_text \| default_assumption}`. Request `overrides` win. |
-| `compute` | code | Runs the engine (§6.3) → line item + trace. |
+| `resolve_facts` | code + LLM | Quantities come from `VesselCall` (code). The qualitative facts of every compiled rule for the call are decided by structured LLM calls over small batches (≤ 12 facts, a rule's facts kept together), run **concurrently**. For each fact the model sees its description in the tariff's words **and how the rule uses it** (which rate, condition, exemption or adjustment each value selects), because a description quoted from a tariff can be ambiguous on its own. It returns `{value, source: vessel_data \| presumed \| default, reason}`: `presumed` marks the typical value for a call of this kind when the data is silent on its ordinary circumstances (where the vessel came from, whether it handles cargo). Request `overrides` win. If a batch fails, its facts keep their rule defaults and the response carries a warning. |
+| `compute` | code | Runs the engine (§6.3) → line item + trace. A charge that computes to zero is reported as not applicable. |
 | `critique` | LLM, structured | Reviews the evidence and the rule, plus the engine's evaluation of it for one illustrative vessel. Did it use the right port column? Did it miss a reduction, surcharge or minimum? Is "per service" multiplied correctly? Is "or part thereof" rounded up? Each issue is `blocking` (wrong amount or applicability for an ordinary call, or a missing vessel/call-dependent reduction, surcharge, minimum or exemption) or `minor` (anything else, e.g. how request- or delay-triggered extras are modelled). Blocking issues → `extract_rule` (≤ `AGENT_MAX_REVISIONS`); none → approved, minor ones kept as review notes. If revisions run out, the last grounded rule is kept, flagged `low_confidence` with the open issues. Extractor and critic share one description of how the engine evaluates a rule (`prompts/rule_semantics.py`), so they agree on what a rule means. |
-| `aggregate` | code | Collects the results, orders them by section, totals, attaches warnings and persists `calculation` + `agent_step`. A charge that raised an error gives `status: partial`, never a 500. |
+| `aggregate` | code (`services/calculations.py`) | Collects the results, orders them by section, totals, attaches warnings and persists `calculation` + `agent_step`. A charge that failed to compile or evaluate is listed under `failed` and gives `status: partial`, never a 500. |
 
 **Tools** (`app/agent/tools.py`, all read-only, scoped to the resolved document):
 
@@ -500,12 +505,16 @@ project.
   "query": null,
   "document_id": null,
   "overrides": { "num_services": null, "facts": {} },
+  "charge_ids": null,
+  "requested_charges": [],
   "refresh_rules": false
 }
 ```
 
-`vessel` (the brief's profile format, or the flat form), `query` (natural language), or both.
-`port` can be omitted if the query names it. `refresh_rules=true` bypasses the rule cache.
+`vessel` (the brief's profile format, or `{vessel, call}`), `query` (natural language), or both;
+profile fields win over the query field by field. `port` can be omitted if the query names it.
+`charge_ids` limits pricing to those charges; `requested_charges` adds on-request charges (e.g.
+fresh water). `refresh_rules=true` recompiles the cached rules first.
 
 Response `200`:
 
@@ -531,9 +540,11 @@ Response `200`:
       "rule_source": "cache"
     }
   ],
-  "not_applicable": [{"charge_id": "berth_dues", "reason": "Vessel is engaged in cargo working", "citation": {"section_ref": "4.1.2"}}],
-  "not_priced": [{"charge_id": "samsa_levy", "reason": "Rate set by external regulations, not in this document"}],
-  "excluded": [{"charge_id": "cargo_dues_dry_bulk", "reason": "Payable by the cargo owner, not the vessel"}],
+  "not_applicable": [{"charge_id": "berth_dues", "section_refs": ["4.1.2"], "reason": "Not applicable: requires ..."}],
+  "not_priced": [{"charge_id": "samsa_levy", "section_refs": ["1.2"], "reason": "Rate set by external regulations"}],
+  "on_request": [{"charge_id": "fresh_water_supply", "section_refs": ["4.5"], "reason": "Charged only when requested ..."}],
+  "excluded": [{"charge_id": "cargo_dues_dry_bulk", "section_refs": ["7.2"], "reason": "Payable by the cargo owner, not the vessel."}],
+  "failed": [],
   "total": "…",
   "warnings": [],
   "model": "…",
@@ -541,8 +552,14 @@ Response `200`:
 }
 ```
 
-Errors: `404 DOCUMENT_NOT_FOUND`, `422 VALIDATION_ERROR`, `422 INSUFFICIENT_VESSEL_DATA`,
-`422 PORT_NOT_COVERED`, `429 RATE_LIMITED`, `503 LLM_UNAVAILABLE`, `504 CALCULATION_TIMEOUT`.
+Each line item also carries `facts` (value, source, reason), `review_notes` and `open_issues`
+from the rule's review, `confidence` (`low` when the rule was flagged) and `rule_source` (`cache`
+or `compiled`).
+
+Errors: `404 DOCUMENT_NOT_FOUND`, `409 DOCUMENT_NOT_READY`, `422 VALIDATION_ERROR`,
+`422 PORT_REQUIRED`, `422 INSUFFICIENT_VESSEL_DATA`, `422 PORT_NOT_COVERED`, `422 UNKNOWN_CHARGE`,
+`429 RATE_LIMITED`, `503 LLM_UNAVAILABLE`, `504 LLM_TIMEOUT`, `504 CALCULATION_TIMEOUT`. Every
+calculation, failed or not, is stored (`GET /v1/calculations/{id}` returns it with its trace).
 
 ### Other routes
 
@@ -590,9 +607,10 @@ Errors: `404 DOCUMENT_NOT_FOUND`, `422 VALIDATION_ERROR`, `422 INSUFFICIENT_VESS
 
 ## 13. Validation case and expected accuracy
 
-`eval/cases/sudestada_durban.yaml` holds the vessel profile from the brief, `port: Durban`, the
-reference values, and a mapping from reference labels to the agent's line items by name or section.
-That mapping lives in the eval case only, never in `app/`.
+`eval/cases/sudestada_durban.json` holds the vessel profile (by file), `port: Durban`, a
+plain-language query describing the same call, and the reference values, each mapped to the
+tariff section of the line item it corresponds to (sections are stable across runs; catalogue ids
+are not). That mapping lives in the eval case only, never in `app/`.
 
 Hand-computing the TNPA rules for SUDESTADA (GT 51,300 → 513 units of 100 tons) gives:
 

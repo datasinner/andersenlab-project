@@ -35,7 +35,7 @@ def test_charge_rule_schema_meets_strict_mode_rules():
 def test_component_union_becomes_any_of():
     components = strict_json_schema(ChargeRule)["properties"]["components"]
     assert "anyOf" in components["items"]
-    assert len(components["items"]["anyOf"]) == 4
+    assert len(components["items"]["anyOf"]) == 5  # fixed, per_unit, banded, tiered, unpriced
 
 
 def test_amounts_are_strings_with_guidance():

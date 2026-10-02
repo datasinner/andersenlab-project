@@ -2,6 +2,7 @@ from fastapi import Request
 
 from app.llm.client import LLMClient
 from app.llm.embeddings import Embedder
+from app.services.calculations import CalculationService
 from app.services.rulebook import RulebookService
 
 
@@ -15,3 +16,7 @@ def get_embedder(request: Request) -> Embedder:
 
 def get_rulebook(request: Request) -> RulebookService:
     return request.app.state.rulebook
+
+
+def get_calculations(request: Request) -> CalculationService:
+    return request.app.state.calculations

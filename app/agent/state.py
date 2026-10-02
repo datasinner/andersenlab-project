@@ -100,6 +100,8 @@ class CompileState(TypedDict, total=False):
     research_notes: str
     rule: ChargeRule | None
     grounded_rule: ChargeRule | None  # the latest rule that passed validation
+    best_rule: ChargeRule | None  # the reviewed rule with the fewest blocking issues
+    best_issues: list[str]  # that rule's blocking issues
     feedback: list[str]
     revisions: int
     critique: Critique | None

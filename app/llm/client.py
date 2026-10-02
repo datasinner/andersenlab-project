@@ -15,7 +15,7 @@ from collections import defaultdict, deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import structlog
 from langchain_core.language_models import BaseChatModel
@@ -33,6 +33,10 @@ from app.llm.resilience import (
 from app.llm.schema import strict_json_schema
 
 logger = structlog.get_logger("app.llm")
+
+
+# Reasoning effort for one call; None leaves the configured default.
+Effort = Literal["minimal", "low", "medium", "high"]
 
 
 class LLMOutputError(LLMError):
@@ -77,7 +81,12 @@ class LLMClient(Protocol):
     model_name: str
 
     async def generate_structured[ModelT: BaseModel](
-        self, schema: type[ModelT], messages: Sequence[BaseMessage], *, name: str
+        self,
+        schema: type[ModelT],
+        messages: Sequence[BaseMessage],
+        *,
+        name: str,
+        effort: Effort | None = None,
     ) -> StructuredResult[ModelT]: ...
 
     async def generate_with_tools(
@@ -112,19 +121,24 @@ class OpenAIClient:
     """Thin LangChain wrapper. Retries, timeouts and concurrency come from
     the shared ResiliencePolicy, so the SDK's own retries are disabled."""
 
-    def __init__(self, policy: ResiliencePolicy, chat_model: BaseChatModel | None = None) -> None:
+    def __init__(
+        self,
+        policy: ResiliencePolicy,
+        chat_model: BaseChatModel | None = None,
+        model: str | None = None,
+    ) -> None:
         self._policy = policy
-        self.model_name = settings.llm_model
-        self._model = chat_model or self._build_chat_model()
+        self.model_name = model or settings.llm_model
+        self._model = chat_model or self._build_chat_model(self.model_name)
 
     @staticmethod
-    def _build_chat_model() -> BaseChatModel:
+    def _build_chat_model(model: str | None = None) -> BaseChatModel:
         if not settings.openai_api_key:
             raise LLMConfigurationError(
                 "OPENAI_API_KEY is not set. Set it, or use LLM_PROVIDER=fake to run without one."
             )
         options: dict[str, Any] = {
-            "model": settings.llm_model,
+            "model": model or settings.llm_model,
             "api_key": settings.openai_api_key,
             # The Responses API: reasoning models only accept function tools there.
             "use_responses_api": True,
@@ -139,9 +153,17 @@ class OpenAIClient:
         return ChatOpenAI(**options)
 
     async def generate_structured[ModelT: BaseModel](
-        self, schema: type[ModelT], messages: Sequence[BaseMessage], *, name: str
+        self,
+        schema: type[ModelT],
+        messages: Sequence[BaseMessage],
+        *,
+        name: str,
+        effort: Effort | None = None,
     ) -> StructuredResult[ModelT]:
-        bound = self._model.bind(response_format=_response_format(schema))
+        options: dict[str, Any] = {"response_format": _response_format(schema)}
+        if effort is not None:
+            options["reasoning"] = {"effort": effort}
+        bound = self._model.bind(**options)
         started = time.monotonic()
         response = await self._policy.run(lambda: bound.ainvoke(list(messages)), name=name)
         latency_ms = int((time.monotonic() - started) * 1000)
@@ -251,7 +273,12 @@ class FakeLLMClient:
         self._scripts[name].extend(responses)
 
     async def generate_structured[ModelT: BaseModel](
-        self, schema: type[ModelT], messages: Sequence[BaseMessage], *, name: str
+        self,
+        schema: type[ModelT],
+        messages: Sequence[BaseMessage],
+        *,
+        name: str,
+        effort: Effort | None = None,
     ) -> StructuredResult[ModelT]:
         self.calls.append(RecordedCall(name=name, messages=list(messages), schema=schema))
         response = self._next(name, messages)
@@ -296,7 +323,17 @@ class FakeLLMClient:
         return response
 
 
-def build_llm_client(policy: ResiliencePolicy) -> LLMClient:
+def build_llm_client(policy: ResiliencePolicy, model: str | None = None) -> LLMClient:
     if settings.llm_provider == "fake":
         return FakeLLMClient()
-    return OpenAIClient(policy)
+    return OpenAIClient(policy, model=model)
+
+
+def build_llm_clients(policy: ResiliencePolicy) -> tuple[LLMClient, LLMClient]:
+    """(runtime client, compile client). They are one client unless
+    LLM_COMPILE_MODEL names a different model."""
+    runtime = build_llm_client(policy)
+    compile_model = settings.llm_compile_model
+    if not compile_model or compile_model == runtime.model_name:
+        return runtime, runtime
+    return runtime, build_llm_client(policy, model=compile_model)

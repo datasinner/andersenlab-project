@@ -68,6 +68,26 @@ def test_per_unit_with_time_pro_rata():
     assert "36 / 24 = 1.5" in item.formula[0]
 
 
+def test_units_can_deduct_a_number_fact():
+    """ "Per 24 hours of the time in port less the hours worked"."""
+    component = per_unit(
+        rate="100",
+        basis="time_in_port_hours",
+        unit_size="24",
+        rounding="ceil",
+    )
+    component["units"]["less"] = "hours_worked"
+    rule = make_rule(
+        components=[component],
+        facts=[{"name": "hours_worked", "type": "number", "description": "Hours worked"}],
+    )
+    worked_half = evaluate_rule(rule, quantities(time_in_port_hours=81), {"hours_worked": "40"})
+    assert worked_half.amount == Decimal("200.00")  # ceil((81 − 40) / 24) = 2
+    assert "ceil((81 − 40 hours_worked) / 24) = 2" in worked_half.formula[0]
+    worked_all = evaluate_rule(rule, quantities(time_in_port_hours=81), {"hours_worked": "81"})
+    assert worked_all.amount == Decimal("0.00")
+
+
 def test_units_above_an_offset_never_go_negative():
     component = per_unit()
     component["units"]["above"] = "5 000"
@@ -159,6 +179,26 @@ def test_tiered_fee_charges_each_slice_at_its_own_rate(gross_tonnage, expected):
     assert item.amount == Decimal(expected)
 
 
+def test_tiers_can_be_given_by_width():
+    """ "Free for 30 days, the next 90 days at 2.82, the following 90 days at
+    5.56, thereafter 11.14" per metre per day: widths, not printed bounds."""
+    component = {
+        "kind": "tiered",
+        "id": "stay",
+        "label": "Stay by days",
+        "basis": "time_in_port_days",
+        "tiers": [
+            {"up_to": "30", "rate": "0", "rounding": "ceil"},
+            {"up_to": None, "width": "90", "rate": "2.82", "rounding": "ceil"},
+            {"up_to": None, "width": "90", "rate": "5.56", "rounding": "ceil"},
+            {"up_to": None, "rate": "11.14", "rounding": "ceil"},
+        ],
+    }
+    item = evaluate_rule(make_rule(components=[component]), quantities(time_in_port_days=250))
+    # 30 free, 90 × 2.82, 90 × 5.56, 40 × 11.14
+    assert item.amount == Decimal("1199.80")
+
+
 def test_tiered_fee_with_a_bounded_last_tier_ignores_the_excess():
     component = {**TIERED, "tiers": TIERED["tiers"][:1]}
     item = evaluate_rule(make_rule(components=[component]), quantities(gross_tonnage=20000))
@@ -233,6 +273,28 @@ def test_unpriced_rules_pass_their_status_through(status, expected_status, reaso
 def test_unpriced_rule_reason_uses_its_notes():
     rule = make_rule(status="on_application", components=[], notes=["Ask the port authority."])
     assert evaluate_rule(rule, GT_1050).reason == "Ask the port authority."
+
+
+def test_an_unpriced_case_reports_the_charge_not_priced_for_that_call():
+    rule = make_rule(
+        components=[
+            per_unit(),
+            {
+                "kind": "unpriced",
+                "id": "coasters",
+                "label": "Coasters pay under a special agreement",
+                "when": [{"fact": "is_coaster", "op": "eq", "value": True}],
+            },
+        ],
+        facts=[flag("is_coaster")],
+    )
+    coaster = evaluate_rule(rule, GT_1050, {"is_coaster": True})
+    assert coaster.status == LineItemStatus.NOT_PRICED
+    assert coaster.reason == (
+        "Coasters pay under a special agreement: the document gives no rate for this case."
+    )
+    other = evaluate_rule(rule, GT_1050, {"is_coaster": False})
+    assert other.amount == Decimal("22.00")
 
 
 def test_matching_exemption_makes_the_charge_not_applicable():

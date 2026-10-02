@@ -11,13 +11,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import settings
 from app.db import async_session_factory, engine
 from app.errors import AppError
-from app.llm.client import build_llm_client
+from app.llm.client import build_llm_clients
 from app.llm.embeddings import build_embedder
 from app.llm.resilience import ResiliencePolicy
 from app.logging_conf import configure_logging
 from app.middleware import RequestContextMiddleware
-from app.routers import documents, health, rules
+from app.routers import calculations, documents, health, rules
 from app.schemas import ErrorDetail, ErrorResponse
+from app.services.calculations import CalculationService
 from app.services.rulebook import RulebookService
 
 configure_logging()
@@ -29,16 +30,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # One policy per process: the chat client and the embedder share its
     # semaphore. A missing API key fails here, at startup, not mid-request.
     policy = ResiliencePolicy.from_settings()
-    app.state.llm_client = build_llm_client(policy)
+    app.state.llm_client, app.state.compile_llm_client = build_llm_clients(policy)
     app.state.embedder = build_embedder(policy)
     app.state.rulebook = RulebookService(
-        async_session_factory, app.state.llm_client, app.state.embedder
+        async_session_factory, app.state.compile_llm_client, app.state.embedder
+    )
+    app.state.calculations = CalculationService(
+        async_session_factory, app.state.llm_client, app.state.rulebook
     )
     logger.info(
         "startup_complete",
         app_env=settings.app_env,
         llm_provider=settings.llm_provider,
         llm_model=app.state.llm_client.model_name,
+        compile_model=app.state.compile_llm_client.model_name,
         embedding_model=app.state.embedder.model_name,
     )
 
@@ -89,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(documents.router)
     app.include_router(rules.router)
+    app.include_router(calculations.router)
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
