@@ -19,7 +19,7 @@ flowchart LR
 
     subgraph api["API container :8000"]
       direction TB
-      entry["Entrypoint<br/>migrate + ingest bundled tariffs"]
+      entry["Entrypoint<br/>migrate + ingest bundled tariffs<br/>+ load rulebook files"]
       routes["FastAPI routers<br/>documents · rules · calculations · health"]
       services["Services<br/>documents · rulebook · calculations"]
       ingestion["Ingestion pipeline<br/>parse · structure · chunk · embed · catalogue"]

@@ -801,6 +801,7 @@ and limitations.
 
 ### Phase 11 (bonus): Public deployment
 §15. **Gate:** the public URL answers `/health` and a keyed calculation request.
+**Not pursued:** the system is run on localhost with Docker Compose (decided 2026-10-03).
 
 ---
 
