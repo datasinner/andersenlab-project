@@ -167,6 +167,7 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │       └── health.py
 ├── data/tariffs/                  # bundled tariff PDFs, ingested at startup
 ├── data/synthetic/                # the rendered synthetic test-port PDF (eval only)
+├── data/rulebooks/                # exported compiled rulebooks, loaded at startup
 ├── examples/                      # Swagger request examples (kept out of app/)
 ├── eval/
 │   ├── cases/sudestada_durban.json
@@ -177,6 +178,7 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 ├── scripts/
 │   ├── ingest.py                  # CLI: ingest a PDF (idempotent)
 │   ├── compile_rules.py           # CLI: compile + export the rulebook for a port
+│   ├── rulebook.py                # CLI: export a rulebook file / import rulebook files
 │   ├── calculate.py               # CLI: price a vessel call from rule files, without the API
 │   ├── llm_smoke.py               # one real extraction + embedding call (Phase 3 gate)
 │   └── make_synthetic_tariff.py   # renders the synthetic test-port PDF
@@ -228,6 +230,7 @@ All settings live in one `Settings` class in `app/config.py`. Every value appear
 | `RETRIEVAL_RRF_K` | `60` | reciprocal rank fusion constant |
 | `PARSER_VISION_FALLBACK` | `false` | re-transcribe pages with suspect tables via an OpenAI vision call |
 | `TARIFFS_DIR` | `./data/tariffs` | PDFs ingested on startup |
+| `RULEBOOKS_DIR` | `./data/rulebooks` | rulebook files loaded on startup (after ingestion) |
 | `MAX_UPLOAD_MB` | `25` | |
 | `API_AUTH_KEY` | empty | if set, every `/v1/*` call needs `X-API-Key` (for the public deployment) |
 | `UVICORN_WORKERS` | `2` | |
@@ -705,8 +708,17 @@ support-assistant project.
   `nginx` (`:8080`, `proxy_read_timeout` from §12, `client_max_body_size` = `MAX_UPLOAD_MB`).
   `compose.override.yaml` adds hot reload and exposes the DB port for local development.
 - **Entrypoint:** `alembic upgrade head` → `python scripts/ingest.py --dir $TARIFFS_DIR`
-  (idempotent) → uvicorn.
-- **Makefile:** `up`, `down`, `test`, `lint`, `migrate`, `ingest`, `compile PORT=…`, `eval`,
+  (idempotent) → `python scripts/rulebook.py import --dir $RULEBOOKS_DIR` (idempotent) → uvicorn.
+- **Rulebook files:** compiling a port takes minutes and about a million tokens, so a reviewed
+  rulebook is exported (`make rulebook-export PORT=Durban` → `data/rulebooks/<pdf>.json`) and
+  loaded into fresh databases. A file holds what the rules were compiled against (the document
+  profile and charge catalogue, which come from LLM calls and could differ in another
+  ingestion), the rules with the critic's verdicts, and the position of each cited chunk; import
+  matches the document by checksum, re-points citations at this database's chunks (by position,
+  verified by quote), and skips files compiled with other prompt or schema versions. It is data
+  produced from the document, like the cache it fills.
+- **Makefile:** `up`, `down`, `test`, `lint`, `migrate`, `ingest`, `compile PORT=…`,
+  `rulebook-export PORT=…`, `rulebook-import`, `eval`,
   `eval-retrieval`, `logs`.
 - **Bonus, public endpoint:** deploy the same image to a container host (Render, Railway or
   Fly.io) with managed Postgres that supports pgvector, or to a single VM running Compose. Set

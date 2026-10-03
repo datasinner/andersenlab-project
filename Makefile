@@ -1,4 +1,4 @@
-.PHONY: up down test test-unit coverage lint format migrate ingest calculate smoke eval eval-retrieval logs
+.PHONY: up down test test-unit coverage lint format migrate ingest compile rulebook-export rulebook-import calculate smoke eval eval-retrieval logs
 
 up:
 	docker compose up --build
@@ -30,6 +30,18 @@ migrate:
 # Ingest every PDF in data/tariffs (idempotent).
 ingest:
 	uv run python scripts/ingest.py --dir data/tariffs
+
+# Compile (or reuse) the rulebook for a port: make compile PORT=Durban
+compile:
+	uv run python scripts/compile_rules.py --port "$(PORT)"
+
+# Write a port's compiled rulebook to data/rulebooks/ (loaded at container start).
+rulebook-export:
+	uv run python scripts/rulebook.py export --port "$(PORT)"
+
+# Load every rulebook in data/rulebooks/ into the database (idempotent).
+rulebook-import:
+	uv run python scripts/rulebook.py import
 
 # Price SUDESTADA at Durban with the hand-written golden rules (no LLM, no DB).
 calculate:

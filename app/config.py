@@ -44,6 +44,8 @@ class Settings(BaseSettings):
 
     parser_vision_fallback: bool = False
     tariffs_dir: str = "./data/tariffs"
+    # Exported rulebooks loaded at startup, so a fresh database needn't recompile.
+    rulebooks_dir: str = "./data/rulebooks"
     # Example requests shown in Swagger; kept outside app/ (they name real ports).
     examples_dir: str = "./examples"
     max_upload_mb: int = Field(default=25, gt=0)
