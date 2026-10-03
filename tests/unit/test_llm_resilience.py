@@ -71,11 +71,16 @@ async def test_retries_stop_after_the_limit(error, expected):
     assert operation.calls == 3
 
 
-async def test_exhausted_credit_is_not_retried():
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"error": {"code": "insufficient_quota", "message": "no credits"}},
+        {"error": {"type": "insufficient_quota", "code": "credit_balance_exhausted"}},
+    ],
+)
+async def test_exhausted_credit_is_not_retried(body):
     error = openai.APIStatusError(
-        "no credits",
-        response=httpx.Response(429, request=REQUEST),
-        body={"error": {"code": "insufficient_quota", "message": "no credits"}},
+        "no credits", response=httpx.Response(429, request=REQUEST), body=body
     )
     operation = _Flaky(error, error, error)
     with pytest.raises(LLMUnavailableError, match="no credits left"):

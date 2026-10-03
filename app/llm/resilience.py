@@ -86,7 +86,7 @@ class ResiliencePolicy:
                 cause: Exception = exc
             except openai.APIStatusError as exc:
                 cause = exc
-                if exc.status_code == 429 and _error_code(exc) == "insufficient_quota":
+                if exc.status_code == 429 and _out_of_credit(exc):
                     # Exhausted credit, not a rate limit: retrying can't help.
                     raise LLMUnavailableError(
                         f"{name}: the provider account has no credits left"
@@ -122,10 +122,19 @@ class ResiliencePolicy:
         return base + random.uniform(0, base * 0.25)
 
 
-def _error_code(exc: openai.APIStatusError) -> str | None:
-    code = getattr(exc, "code", None)
-    if code:
-        return str(code)
+# How OpenAI marks a 429 that is exhausted credit rather than a rate limit:
+# the error type, or one of the codes it has used for it.
+_OUT_OF_CREDIT = {"insufficient_quota", "credit_balance_exhausted"}
+
+
+def _out_of_credit(exc: openai.APIStatusError) -> bool:
     body = exc.body if isinstance(exc.body, dict) else {}
     error = body.get("error", body)
-    return error.get("code") if isinstance(error, dict) else None
+    error = error if isinstance(error, dict) else {}
+    markers = {
+        getattr(exc, "code", None),
+        getattr(exc, "type", None),
+        error.get("code"),
+        error.get("type"),
+    }
+    return bool(markers & _OUT_OF_CREDIT)
