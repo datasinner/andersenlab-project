@@ -28,6 +28,7 @@ NAMES = [
     "SUDESTADA",
     "Exampleville",
     "NORDIC TERN",
+    "MORVEN",
     # Distinctive wording from the TNPA document.
     "Tariff Book",
     "TUGS/VESSEL",

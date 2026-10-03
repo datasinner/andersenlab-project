@@ -19,6 +19,9 @@ How the engine evaluates a ChargeRule:
 - The engine supplies these quantities for every call. Conditions and units may use them \
 directly; never declare them as facts:
 $quantities
+- A list of conditions (applies_when, or the when of an exemption, component or adjustment) \
+holds when every item in it holds. An item {"any_of": [conditions]} holds when at least one of \
+its conditions holds.
 - A rule whose status is not "priced" reports that status. Otherwise the charge does not apply \
 if all conditions of any exemption hold, or if any applies_when condition fails.
 - If an unpriced component's conditions all hold, the charge is reported as not priced for the \

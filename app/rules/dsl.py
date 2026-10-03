@@ -3,10 +3,11 @@
 A ChargeRule describes one charge at one port: which pricing components it
 has (fixed fees, rates per unit "or part thereof", tonnage bands, marginal
 tiers, time pro-rata), when it applies, exemptions, and percentage
-reductions/surcharges. The agent extracts rules from a tariff document into
-this shape; app.rules.engine turns them into money. The DSL describes how
-tariffs work in general; which rules and numbers apply comes from the
-document.
+reductions/surcharges. A list of conditions holds when every item holds; an
+item may be an AnyOf, which holds when one of its conditions does. The agent
+extracts rules from a tariff document into this shape; app.rules.engine turns
+them into money. The DSL describes how tariffs work in general; which rules
+and numbers apply comes from the document.
 
 Numbers are Decimals, accepted as strings exactly as printed ("12 345.67")
 and serialized to JSON as strings, so no value ever passes through a float.
@@ -29,7 +30,7 @@ from pydantic import (
 from app.domain.numbers import parse_number
 from app.domain.vessel import Basis
 
-RULE_SCHEMA_VERSION = 5
+RULE_SCHEMA_VERSION = 6
 
 
 def _to_decimal(value: object) -> object:
@@ -91,6 +92,17 @@ class Condition(_Model):
         return self
 
 
+class AnyOf(_Model):
+    """Holds when at least one of its conditions holds: a service "compulsory
+    for vessels over 90 m" is charged over 90 m, or when requested."""
+
+    any_of: list[Condition] = Field(min_length=2)
+
+
+# Every item must hold.
+Conditions = list[Condition | AnyOf]
+
+
 class Citation(_Model):
     chunk_id: int
     section_ref: str
@@ -116,7 +128,7 @@ class _Component(_Model):
     label: str = Field(min_length=1)
     # The component only counts when all of these hold (e.g. a different
     # rate for vessels at their registered port).
-    when: list[Condition] = Field(default_factory=list)
+    when: Conditions = Field(default_factory=list)
 
 
 class FixedFee(_Component):
@@ -231,7 +243,7 @@ class UnpricedCase(_Component):
     call instead of being priced by the other components."""
 
     kind: Literal["unpriced"]
-    when: list[Condition] = Field(min_length=1)
+    when: Conditions = Field(min_length=1)
 
 
 Component = Annotated[
@@ -246,7 +258,7 @@ class Adjustment(_Model):
     percent: PositiveAmount
     # Component ids the percentage applies to, or "all" for the whole charge.
     applies_to: list[Identifier] | Literal["all"] = "all"
-    when: list[Condition] = Field(min_length=1)
+    when: Conditions = Field(min_length=1)
     # Within one group only the largest applicable adjustment counts
     # ("not enjoyed in addition to ...").
     exclusive_group: Identifier | None = None
@@ -255,7 +267,7 @@ class Adjustment(_Model):
 
 class Exemption(_Model):
     description: str = Field(min_length=1)
-    when: list[Condition] = Field(min_length=1)
+    when: Conditions = Field(min_length=1)
     citation: Citation | None = None
 
 
@@ -277,7 +289,7 @@ class ChargeRule(_Model):
     payer: Literal["vessel", "cargo", "other"]
     # not_applicable_at_port: the document defines the charge only for other ports.
     status: Literal["priced", "on_application", "not_priced_in_document", "not_applicable_at_port"]
-    applies_when: list[Condition] = Field(default_factory=list)
+    applies_when: Conditions = Field(default_factory=list)
     exemptions: list[Exemption] = Field(default_factory=list)
     components: list[Component] = Field(default_factory=list)
     minimum: NonNegativeAmount | None = None
@@ -332,14 +344,15 @@ class ChargeRule(_Model):
         return self
 
     def all_conditions(self) -> list[Condition]:
-        conditions = list(self.applies_when)
+        """Every single condition in the rule, AnyOf groups opened up."""
+        items = list(self.applies_when)
         for exemption in self.exemptions:
-            conditions.extend(exemption.when)
+            items.extend(exemption.when)
         for component in self.components:
-            conditions.extend(component.when)
+            items.extend(component.when)
         for adjustment in self.adjustments:
-            conditions.extend(adjustment.when)
-        return conditions
+            items.extend(adjustment.when)
+        return flatten(items)
 
     def all_units(self) -> list[Units]:
         found = [self.multiplier] if self.multiplier else []
@@ -357,3 +370,11 @@ class ChargeRule(_Model):
             if fact.name == name:
                 return fact
         return None
+
+
+def flatten(items: Conditions) -> list[Condition]:
+    """The single conditions in a list, AnyOf groups opened up."""
+    found: list[Condition] = []
+    for item in items:
+        found.extend(item.any_of if isinstance(item, AnyOf) else [item])
+    return found

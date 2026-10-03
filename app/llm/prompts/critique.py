@@ -26,7 +26,10 @@ the excerpts don't support.
 a drydock or slipway, request a survey, are small or pleasure vessels, lie at particular berths, \
 carry passengers or don't handle cargo has applies_when conditions for each requirement the \
 tariff names, with defaults that hold for an ordinary merchant call. The standard marine \
-services of an ordinary call (pilotage, tug assistance, berthing, running of lines) have none.
+services of an ordinary call (pilotage, tug assistance, berthing, running of lines) have none, \
+unless the tariff makes the service compulsory only for some vessels: then the charge applies \
+when the service is compulsory or requested (one any_of item with a yes/no request fact, \
+default false), so a vessel it doesn't oblige is not charged by default.
 8. A charge the excerpts give rates for has status "priced"; cases they leave to agreement or \
 application are "unpriced" components with conditions, not a reason to leave the whole charge \
 unpriced.
@@ -67,4 +70,4 @@ $excerpts"""
 # The semantics text is fixed; its $quantities placeholder is filled at render time.
 SYSTEM = SYSTEM.replace("$semantics", RULE_SEMANTICS)
 
-PROMPT = PromptTemplate(name="critique", version="6", system=SYSTEM, user=USER)
+PROMPT = PromptTemplate(name="critique", version="7", system=SYSTEM, user=USER)

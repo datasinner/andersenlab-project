@@ -8,7 +8,8 @@ mistyping a rate. It checks:
   ignoring case, punctuation and typography (curly quotes, dashes, dot leaders);
 - every number in the rule (fees, rates, band bounds, tier bounds, unit
   sizes, offsets, minimum/maximum, percentages, numeric condition values)
-  appears somewhere in the cited chunks.
+  appears somewhere in the cited chunks, in digits or in words ("the fifth
+  day" prints 5).
 
 0 and 1 are skipped: they are structural ("from zero", "per unit") and need
 not be printed.
@@ -21,10 +22,11 @@ from decimal import Decimal
 
 from app.domain.numbers import NumberFormatError, extract_numbers, format_number, parse_number
 from app.rules.dsl import (
+    AnyOf,
     BandedFee,
     ChargeRule,
     Citation,
-    Condition,
+    Conditions,
     FixedFee,
     PerUnitFee,
     TieredFee,
@@ -141,10 +143,13 @@ def _unit_numbers(path: str, units: Units) -> list[tuple[str, Decimal]]:
     return [(f"{path}.unit_size", units.unit_size), (f"{path}.above", units.above)]
 
 
-def _condition_numbers(path: str, conditions: list[Condition]) -> list[tuple[str, Decimal]]:
+def _condition_numbers(path: str, items: Conditions) -> list[tuple[str, Decimal]]:
     found: list[tuple[str, Decimal]] = []
-    for i, condition in enumerate(conditions):
-        values = condition.value if isinstance(condition.value, list) else [condition.value]
+    for i, item in enumerate(items):
+        if isinstance(item, AnyOf):
+            found.extend(_condition_numbers(f"{path}[{i}].any_of", item.any_of))
+            continue
+        values = item.value if isinstance(item.value, list) else [item.value]
         for value in values:
             if isinstance(value, bool):
                 continue

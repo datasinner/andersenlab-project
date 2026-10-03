@@ -8,7 +8,9 @@ What this handles, generically:
 - fragments on one baseline (a list number and its text, a contents entry
   and its page number) are joined into one line;
 - tables are extracted as markdown, and text inside a table's area is
-  dropped from the prose so it isn't read twice.
+  dropped from the prose so it isn't read twice;
+- typographic ligatures ("ﬁ", "ﬂ") are spelled out, so "Deﬁnitions" reads
+  as "Definitions" to the heading rules and to search.
 
 PyMuPDF is AGPL-licensed; everything else depends on the PdfParser protocol,
 so another library can replace it.
@@ -25,6 +27,9 @@ _SAME_LINE_TOLERANCE = 2.0  # points between baselines that count as one line
 _TWO_UP_MIN_ASPECT = 1.2
 _TWO_UP_MAX_CROSSING_SHARE = 0.02
 _BULLETS = {"•", "·", "●", "◦", "▪", "‣", "-", "–", "o"}
+_LIGATURES = str.maketrans(
+    {"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl", "ﬅ": "st", "ﬆ": "st"}
+)
 
 
 @dataclass(frozen=True)
@@ -85,7 +90,7 @@ class PyMuPdfParser:
                 for line in lines:
                     size_chars[line.size] += len(line.text)
                 tables = [
-                    (table.bbox, (table.to_markdown() or "").strip())
+                    (table.bbox, (table.to_markdown() or "").strip().translate(_LIGATURES))
                     for table in page.find_tables().tables
                 ]
                 for x0, x1 in _logical_columns(page.rect, lines):
@@ -102,7 +107,7 @@ def _raw_lines(page: pymupdf.Page) -> list[_RawLine]:
             spans = [span for span in line["spans"] if span["text"].strip()]
             if not spans:
                 continue
-            text = "".join(span["text"] for span in line["spans"]).strip()
+            text = "".join(span["text"] for span in line["spans"]).strip().translate(_LIGATURES)
             # The line's style is that of its longest span.
             main = max(spans, key=lambda span: len(span["text"].strip()))
             bold = bool(main["flags"] & _BOLD_FLAG) or "bold" in main["font"].lower()

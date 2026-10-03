@@ -23,7 +23,7 @@ from app.domain.vessel import ResolvedQuantities, VesselCall
 from app.llm.client import LLMClient
 from app.llm.prompts import PROMPTS
 from app.llm.resilience import LLMError
-from app.rules.dsl import ChargeRule, FactSpec
+from app.rules.dsl import AnyOf, ChargeRule, Condition, Conditions, FactSpec, flatten
 
 
 class FactDecision(BaseModel):
@@ -158,28 +158,31 @@ def fact_usages(rule: ChargeRule, fact: str) -> list[str]:
     adjustment depends on which value. Context for deciding the fact, since a
     description quoted from a tariff can be ambiguous on its own."""
     usages = []
-    for condition in rule.applies_when:
-        if condition.fact == fact:
-            usages.append(f"the charge applies only when {_requires(condition)}")
+    for item in _mentioning(rule.applies_when, fact):
+        usages.append(f"the charge applies only when {_requires(item)}")
     for exemption in rule.exemptions:
-        for condition in exemption.when:
-            if condition.fact == fact:
-                usages.append(f"exempt ({exemption.description}) when {_requires(condition)}")
+        for item in _mentioning(exemption.when, fact):
+            usages.append(f"exempt ({exemption.description}) when {_requires(item)}")
     for component in rule.components:
-        for condition in component.when:
-            if condition.fact == fact:
-                usages.append(f"rate '{component.label}' is used when {_requires(condition)}")
+        for item in _mentioning(component.when, fact):
+            usages.append(f"rate '{component.label}' is used when {_requires(item)}")
     for adjustment in rule.adjustments:
-        for condition in adjustment.when:
-            if condition.fact == fact:
-                usages.append(
-                    f"{adjustment.kind} of {adjustment.percent}% ({adjustment.description}) "
-                    f"when {_requires(condition)}"
-                )
+        for item in _mentioning(adjustment.when, fact):
+            usages.append(
+                f"{adjustment.kind} of {adjustment.percent}% ({adjustment.description}) "
+                f"when {_requires(item)}"
+            )
     return usages
 
 
-def _requires(condition) -> str:
+def _mentioning(items: Conditions, fact: str) -> list[Condition | AnyOf]:
+    return [item for item in items if any(c.fact == fact for c in flatten([item]))]
+
+
+def _requires(item: Condition | AnyOf) -> str:
+    if isinstance(item, AnyOf):
+        return " or ".join(_requires(condition) for condition in item.any_of)
+    condition = item
     value = condition.value
     if isinstance(value, bool):
         value = "true" if value else "false"

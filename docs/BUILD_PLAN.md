@@ -84,7 +84,8 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 - **PyMuPDF** for PDF parsing (text spans with font metadata, `page.find_tables()` → markdown).
 - Money and quantities are `decimal.Decimal` end to end. JSON responses carry amounts as strings.
 - Every number in a compiled rule must be **grounded**: after number normalisation, it must appear
-  in the tariff text the rule cites. Ungrounded rules are rejected and re-extracted.
+  in the tariff text the rule cites, in digits or in words ("the fifth day" prints 5). Ungrounded
+  rules are rejected and re-extracted.
 - Every line item carries its amount, formula trace, citations (section, page, quote) and
   assumptions.
 - Concurrency to OpenAI is bounded by one `asyncio.Semaphore` per process, with the timeout and
@@ -287,7 +288,7 @@ class Units(BaseModel):      # how many billable units of a quantity
     above: Decimal = 0       # count only the part above this value ("per 100 tons above 50 000")
     less: str | None         # also deduct a number fact or quantity ("time in port less hours worked")
 
-# Every component has: id; label; when: list[Condition]  (counts only if all hold, e.g. a
+# Every component has: id; label; when: Conditions  (counts only if all hold, e.g. a
 # different rate for vessels at their registered port)
 class FixedFee(BaseModel):    kind: Literal["fixed"];    amount
 class PerUnitFee(BaseModel):  kind: Literal["per_unit"]; rate; units: Units
@@ -301,10 +302,12 @@ class UnpricedCase(BaseModel): kind: Literal["unpriced"]; when (required)   # a 
 Component = Annotated[FixedFee | PerUnitFee | BandedFee | TieredFee | UnpricedCase, Field(discriminator="kind")]
 
 class Condition(BaseModel):   fact: str; op: Literal["eq","ne","lt","le","gt","ge","in"]; value
+class AnyOf(BaseModel):       any_of: list[Condition]   # holds if one holds: "compulsory over 90 m" → over 90 m or requested
+Conditions = list[Condition | AnyOf]                    # every item must hold
 class Adjustment(BaseModel):  id; kind: Literal["reduction","surcharge"]; description; percent
                               applies_to: list[str] | Literal["all"]   # component ids
-                              when: list[Condition]; exclusive_group: str | None; citation
-class Exemption(BaseModel):   description; when: list[Condition]; citation
+                              when: Conditions; exclusive_group: str | None; citation
+class Exemption(BaseModel):   description; when: Conditions; citation
 class FactSpec(BaseModel):    name; type: Literal["bool","number","text"]; description
                               default_value: bool | str | None   # assumed when the call doesn't say; None = must resolve
 class Citation(BaseModel):    chunk_id; section_ref; page; quote
@@ -312,7 +315,7 @@ class Citation(BaseModel):    chunk_id; section_ref; page; quote
 class ChargeRule(BaseModel):
     charge_id; name; section_refs; port_key; currency; payer: Literal["vessel","cargo","other"]
     status: Literal["priced", "on_application", "not_priced_in_document", "not_applicable_at_port"]
-    applies_when: list[Condition]          # all must hold, otherwise not applicable
+    applies_when: Conditions               # all must hold, otherwise not applicable
     exemptions: list[Exemption]
     components: list[Component]            # summed → amount per service/call
     minimum: Decimal | None; maximum: Decimal | None

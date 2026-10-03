@@ -62,7 +62,11 @@ request a survey, are small or pleasure vessels, lie at particular berths, carry
 don't handle cargo), put that in applies_when, with facts whose default is their value for an \
 ordinary merchant call. When the tariff names conditions together ("occupying a berth and not \
 handling cargo"), make each one a separate condition. The standard marine services of an \
-ordinary call (pilotage, tug assistance, berthing, running of lines) need no such condition.
+ordinary call (pilotage, tug assistance, berthing, running of lines) need no such condition, \
+unless the tariff makes the service compulsory only for some vessels ("compulsory for vessels \
+over 90 m"). Then a vessel it doesn't oblige uses the service only on request: applies_when \
+is one any_of item, holding when the service is compulsory or when a yes/no fact says the \
+vessel requested it (default false).
 16. A period or quantity reduced by something the call supplies ("the time in port less the \
 hours worked") deducts a number fact with units.less.
 
@@ -85,4 +89,4 @@ $feedback"""
 
 SYSTEM = SYSTEM.replace("$semantics", RULE_SEMANTICS)
 
-PROMPT = PromptTemplate(name="extract_rule", version="6", system=SYSTEM, user=USER)
+PROMPT = PromptTemplate(name="extract_rule", version="7", system=SYSTEM, user=USER)

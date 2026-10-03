@@ -196,3 +196,19 @@ def test_all_conditions_and_fact_spec_lookup():
     assert [condition.fact for condition in rule.all_conditions()] == ["a", "b", "c", "d"]
     assert rule.fact_spec("c").name == "c"
     assert rule.fact_spec("missing") is None
+
+
+def test_any_of_groups_are_validated_and_opened_up():
+    group = {
+        "any_of": [
+            {"fact": "a", "op": "eq", "value": True},
+            {"fact": "gross_tonnage", "op": "gt", "value": "50"},
+        ]
+    }
+    rule = make_rule(applies_when=[group], facts=[flag("a")])
+    assert [condition.fact for condition in rule.all_conditions()] == ["a", "gross_tonnage"]
+
+    with pytest.raises(ValidationError, match="neither a declared fact"):
+        make_rule(applies_when=[group])
+    with pytest.raises(ValidationError):
+        make_rule(applies_when=[{"any_of": group["any_of"][:1]}], facts=[flag("a")])

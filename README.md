@@ -136,6 +136,15 @@ both the profile and the plain-language query, with passenger levy and yacht due
 and wharfage and licences excluded. `tests/test_no_hardcoding.py` fails if any name or figure
 from either tariff appears under `app/`.
 
+A second vessel, the 78 m coaster MORVEN (`eval/cases/exampleville_morven.json`), found two
+gaps the first one couldn't: grounding only read numbers printed as digits, so "beyond the fifth
+day" could not ground a 5 and the harbour-dues minimum was lost in revision; and the prompts
+treated tug assistance as part of every call, though this tariff makes towage compulsory only
+over 120 m. Both were fixed in general terms (numbers written as words count as printed; an
+`any_of` condition expresses "compulsory for some vessels, otherwise only on request"), the
+Durban rulebook was recompiled with the new prompts (6 minutes, 1.2M tokens), and all three
+cases pass: MORVEN 3,264.20 EUR, NORDIC TERN 13,688.80 EUR, SUDESTADA as in the table below.
+
 ### Accuracy and reliability, honestly
 
 With a reviewed rulebook in the cache, a calculation is deterministic and fast (about 12 s from

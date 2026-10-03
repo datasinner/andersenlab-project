@@ -84,6 +84,23 @@ def test_fact_usages_say_what_each_value_selects():
     assert fact_usages(rule, "enters_port") == ["the charge applies only when enters_port eq true"]
 
 
+def test_fact_usages_show_the_whole_any_of_group():
+    rule = make_rule(
+        applies_when=[
+            {
+                "any_of": [
+                    {"fact": "loa_m", "op": "gt", "value": "90"},
+                    {"fact": "requested", "op": "eq", "value": True},
+                ]
+            }
+        ],
+        facts=[flag("requested")],
+    )
+    assert fact_usages(rule, "requested") == [
+        "the charge applies only when loa_m gt 90 or requested eq true"
+    ]
+
+
 def _call():
     vessel_call = VesselCall.from_profile({"vessel": {"gross_tonnage": 1000}}, port="Exampleville")
     return vessel_call, resolve_quantities(vessel_call)

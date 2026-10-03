@@ -25,11 +25,13 @@ from app.domain.numbers import NumberFormatError, format_number, parse_number, r
 from app.domain.vessel import Basis, ResolvedQuantities
 from app.rules.dsl import (
     Adjustment,
+    AnyOf,
     BandedFee,
     ChargeRule,
     Citation,
     Component,
     Condition,
+    Conditions,
     FactSpec,
     FixedFee,
     Operator,
@@ -140,11 +142,11 @@ class _Evaluation:
                     reason=f"Exempt: {exemption.description}",
                     citations=citations,
                 )
-        for condition in rule.applies_when:
-            if not self._holds(condition):
+        for item in rule.applies_when:
+            if not self._item_holds(item):
                 return self._result(
                     LineItemStatus.NOT_APPLICABLE,
-                    reason=f"Not applicable: requires {self._describe(condition)}",
+                    reason=f"Not applicable: requires {self._describe(item)}",
                 )
 
         for component in rule.components:
@@ -389,8 +391,13 @@ class _Evaluation:
 
     # -- conditions, facts and quantities ------------------------------------
 
-    def _all_hold(self, conditions: list[Condition]) -> bool:
-        return all(self._holds(condition) for condition in conditions)
+    def _all_hold(self, items: Conditions) -> bool:
+        return all(self._item_holds(item) for item in items)
+
+    def _item_holds(self, item: Condition | AnyOf) -> bool:
+        if isinstance(item, AnyOf):
+            return any(self._holds(condition) for condition in item.any_of)
+        return self._holds(item)
 
     def _holds(self, condition: Condition) -> bool:
         subject = self._subject(condition.fact)
@@ -445,7 +452,10 @@ class _Evaluation:
         if text not in self.assumptions:
             self.assumptions.append(text)
 
-    def _describe(self, condition: Condition) -> str:
+    def _describe(self, item: Condition | AnyOf) -> str:
+        if isinstance(item, AnyOf):
+            return " or ".join(self._describe(condition) for condition in item.any_of)
+        condition = item
         spec = self.rule.fact_spec(condition.fact)
         subject = spec.description if spec else condition.fact
         value = condition.value

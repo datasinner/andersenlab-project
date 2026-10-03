@@ -335,6 +335,27 @@ def test_failed_applies_when_condition_explains_itself():
     assert item.reason == "Not applicable: requires is_tanker applies = yes"
 
 
+def test_any_of_condition_holds_when_one_of_its_conditions_holds():
+    # "Compulsory for vessels over 90 m": charged over 90 m, or when requested.
+    rule = make_rule(
+        applies_when=[
+            {
+                "any_of": [
+                    {"fact": "loa_m", "op": "gt", "value": "90"},
+                    {"fact": "service_requested", "op": "eq", "value": True},
+                ]
+            }
+        ],
+        facts=[flag("service_requested")],
+    )
+    short = quantities(loa_m=60)
+    item = evaluate_rule(rule, short)
+    assert item.status == LineItemStatus.NOT_APPLICABLE
+    assert item.reason == ("Not applicable: requires loa_m > 90 or service_requested applies = yes")
+    assert evaluate_rule(rule, short, {"service_requested": True}).status == LineItemStatus.CHARGED
+    assert evaluate_rule(rule, quantities(loa_m=95)).status == LineItemStatus.CHARGED
+
+
 def test_components_with_unmet_conditions_are_skipped():
     rule = make_rule(
         components=[

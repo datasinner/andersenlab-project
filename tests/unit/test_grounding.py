@@ -128,3 +128,38 @@ def test_every_kind_of_number_is_checked():
     )
     flagged = sorted(int(message.split()[0]) for _, message in _messages(rule, {1: "Example fee"}))
     assert flagged == list(range(2, 19))
+
+
+def test_numbers_written_as_words_are_printed():
+    rule = make_rule(
+        components=[
+            per_unit(
+                rate="12345.67",
+                per_time={
+                    "basis": "time_in_port_days",
+                    "unit_size": "1",
+                    "rounding": "ceil",
+                    "above": "5",
+                },
+            )
+        ],
+    )
+    chunks = {1: "Example fee per 100 tons ……… 12 345.67 for each day beyond the ﬁfth day"}
+    assert _messages(rule, chunks) == []
+
+
+def test_numbers_inside_any_of_groups_are_checked():
+    rule = make_rule(
+        components=[per_unit(rate="12345.67")],
+        applies_when=[
+            {
+                "any_of": [
+                    {"fact": "gross_tonnage", "op": "gt", "value": "50"},
+                    {"fact": "gross_tonnage", "op": "lt", "value": "7"},
+                ]
+            }
+        ],
+    )
+    assert _messages(rule) == [
+        ("applies_when[0].any_of[1].value", "7 does not appear in the cited text")
+    ]

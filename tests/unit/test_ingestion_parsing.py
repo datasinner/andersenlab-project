@@ -1,3 +1,7 @@
+import io
+
+import pymupdf
+
 from app.ingestion.cleaner import clean
 from app.ingestion.parser import PyMuPdfParser, TextLine
 from tests.unit.ingestion_builders import document, line, page, pdf_bytes
@@ -44,6 +48,21 @@ def test_fragments_on_one_baseline_are_joined_and_styles_kept():
     assert isinstance(first, TextLine) and first.bold and first.size == 10
     assert _texts(only) == ["3.6 TUGS AND TOWAGE", "1. Vessel does not leave the port", "Body text"]
     assert parsed.body_size == 9
+
+
+def test_typographic_ligatures_are_spelled_out():
+    # Text shaped by a layout engine (here PyMuPDF's Story) comes out with
+    # ligature glyphs: "Deﬁnitions of the ﬁrst oﬃcial fee".
+    buffer = io.BytesIO()
+    writer = pymupdf.DocumentWriter(buffer)
+    device = writer.begin_page(pymupdf.paper_rect("a4"))
+    story = pymupdf.Story(html="<p>Definitions of the first official fee</p>")
+    story.place(pymupdf.Rect(50, 50, 500, 700))
+    story.draw(device)
+    writer.end_page()
+    writer.close()
+    parsed = PyMuPdfParser().parse(buffer.getvalue())
+    assert _texts(parsed.pages[0]) == ["Definitions of the first official fee"]
 
 
 def test_lone_bullet_glyph_joins_the_following_line():

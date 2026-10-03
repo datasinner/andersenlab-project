@@ -91,3 +91,10 @@ def test_format_number_and_money():
     assert format_number(Decimal("3.390")) == "3.39"
     assert format_number(Decimal("100500.8553")) == "100,500.8553"
     assert format_money(Decimal("199371.3453")) == "199,371.35"
+
+
+def test_extract_numbers_reads_numbers_written_as_words():
+    numbers = extract_numbers("For each day beyond the ﬁfth day, within twenty-four hours")
+    assert {Decimal("5"), Decimal("24")} <= numbers
+    assert {Decimal("200"), Decimal("71")} <= extract_numbers("two hundred metres; seventy-first")
+    assert extract_numbers("someone often weighs tenders") == set()
