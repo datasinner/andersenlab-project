@@ -19,6 +19,7 @@ from decimal import Decimal
 
 import structlog
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.numbers import NumberFormatError, parse_number
@@ -57,6 +58,12 @@ class IngestResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class Registration:
+    document_id: uuid.UUID
+    needs_processing: bool  # False when these exact bytes are already ingested
+
+
 class IngestionPipeline:
     def __init__(
         self,
@@ -71,13 +78,32 @@ class IngestionPipeline:
         self._parser = parser or PyMuPdfParser()
 
     async def ingest(self, content: bytes, filename: str, *, force: bool = False) -> IngestResult:
+        """Register and process in one go (the CLI and container start)."""
+        registration = await self.register(content, filename, force=force)
+        if not registration.needs_processing:
+            return IngestResult(registration.document_id, DocumentStatus.READY, created=False)
+        return await self.process(registration.document_id, content, filename)
+
+    async def register(
+        self, content: bytes, filename: str, *, force: bool = False
+    ) -> "Registration":
+        """Record the document by checksum (idempotent). Fast: an upload calls
+        this in the request and runs process() in the background."""
         checksum = hashlib.sha256(content).hexdigest()
         document_id, already_ready = await self._register(content, checksum, filename, force)
-        log = logger.bind(document_id=str(document_id), filename=filename)
         if already_ready:
-            log.info("ingestion_skipped", reason="already ingested")
-            return IngestResult(document_id, DocumentStatus.READY, created=False)
+            logger.info(
+                "ingestion_skipped",
+                document_id=str(document_id),
+                filename=filename,
+                reason="already ingested",
+            )
+        return Registration(document_id, needs_processing=not already_ready)
 
+    async def process(self, document_id: uuid.UUID, content: bytes, filename: str) -> IngestResult:
+        """Parse, index and catalogue a registered document. Never raises: a
+        failure is recorded on the document."""
+        log = logger.bind(document_id=str(document_id), filename=filename)
         started = time.monotonic()
         try:
             parsed = await asyncio.to_thread(self._parse, content)
@@ -129,7 +155,16 @@ class IngestionPipeline:
                     source_filename=filename, content=content, checksum=checksum
                 )
                 session.add(document)
-                await session.flush()
+                try:
+                    await session.flush()
+                except IntegrityError:
+                    # The same bytes were registered concurrently; use that row.
+                    await session.rollback()
+                    existing = await session.scalar(
+                        select(TariffDocument).where(TariffDocument.checksum == checksum)
+                    )
+                    assert existing is not None
+                    return existing.id, existing.status == DocumentStatus.READY
             else:
                 # A previous attempt failed or was interrupted, or a rebuild
                 # was forced: start over.

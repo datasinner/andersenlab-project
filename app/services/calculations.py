@@ -26,6 +26,7 @@ from app.llm.client import LLMClient
 from app.llm.resilience import LLMError, LLMRateLimitedError, LLMTimeoutError
 from app.models import AgentStep as AgentStepRow
 from app.models import Calculation, CalculationStatus
+from app.observability import DISABLED, Observability
 from app.rules.engine import LineItemStatus
 from app.schemas import (
     AdjustmentOut,
@@ -74,19 +75,33 @@ class CalculationService:
         session_factory: async_sessionmaker[AsyncSession],
         llm: LLMClient,
         rulebook: RulebookService,
+        observability: Observability = DISABLED,
     ) -> None:
         self._sessions = session_factory
         self._llm = llm
+        self._observability = observability
         self._graph = build_calculation_graph(llm, rulebook, session_factory)
 
     async def calculate(self, request: CalculationInput, *, request_id: str) -> CalculationOut:
         calculation_id = uuid.uuid4()
         started = time.monotonic()
+        trace = self._observability.trace(
+            "calculate-port-dues",
+            seed=str(calculation_id),
+            metadata={
+                "request_id": request_id,
+                "calculation_id": str(calculation_id),
+                "port": request.port or "",
+            },
+            tags=["calculation"],
+            input_text=request.query,
+        )
         try:
-            async with asyncio.timeout(settings.calculation_timeout_seconds):
-                final: CalculationState = await self._graph.ainvoke(
-                    {"request": request, "warnings": [], "steps": []}
-                )
+            with trace:
+                async with asyncio.timeout(settings.calculation_timeout_seconds):
+                    final: CalculationState = await self._graph.ainvoke(
+                        {"request": request, "warnings": [], "steps": []}
+                    )
         except TimeoutError as exc:
             error = CalculationTimeoutError(
                 f"The calculation took longer than {settings.calculation_timeout_seconds} s"

@@ -300,3 +300,9 @@ class CalculationSummaryOut(BaseModel):
     total: Decimal | None
     latency_ms: int
     error_code: str | None
+
+
+class UploadOut(BaseModel):
+    document_id: UUID
+    status: str
+    created: bool  # False when these exact bytes were already ingested

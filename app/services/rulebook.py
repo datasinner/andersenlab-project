@@ -34,6 +34,7 @@ from app.llm.embeddings import Embedder
 from app.llm.prompts import versions
 from app.llm.resilience import LLMError
 from app.models import ChargeCatalogueEntry, CompiledRule, TariffDocument
+from app.observability import DISABLED, Observability
 from app.retrieval.search import TariffSearch
 from app.rules.dsl import RULE_SCHEMA_VERSION, ChargeRule
 
@@ -94,9 +95,11 @@ class RulebookService:
         session_factory: async_sessionmaker[AsyncSession],
         llm: LLMClient,
         embedder: Embedder,
+        observability: Observability = DISABLED,
     ) -> None:
         self._sessions = session_factory
         self._llm = llm
+        self._observability = observability
         self._search = TariffSearch(session_factory, embedder)
         self._graph = build_compile_graph(
             llm,
@@ -142,8 +145,19 @@ class RulebookService:
             "steps": [],
         }
         started = time.monotonic()
+        trace = self._observability.trace(
+            "compile-rule",
+            seed=f"{document.id}:{port_key}:{charge.charge_id}:{uuid.uuid4()}",
+            metadata={
+                "document_id": str(document.id),
+                "port": port_key,
+                "charge": charge.charge_id,
+            },
+            tags=["compile"],
+        )
         try:
-            final = await self._graph.ainvoke(initial)
+            with trace:
+                final = await self._graph.ainvoke(initial)
         except LLMError as exc:
             log.warning("rule_compile_failed", error=str(exc))
             return CompileOutcome(

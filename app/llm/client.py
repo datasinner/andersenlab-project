@@ -20,6 +20,7 @@ from typing import Any, Literal, Protocol
 import structlog
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError
 
@@ -31,6 +32,7 @@ from app.llm.resilience import (
     ResiliencePolicy,
 )
 from app.llm.schema import strict_json_schema
+from app.observability import current_callbacks
 
 logger = structlog.get_logger("app.llm")
 
@@ -165,7 +167,10 @@ class OpenAIClient:
             options["reasoning"] = {"effort": effort}
         bound = self._model.bind(**options)
         started = time.monotonic()
-        response = await self._policy.run(lambda: bound.ainvoke(list(messages)), name=name)
+        config = _run_config(name)
+        response = await self._policy.run(
+            lambda: bound.ainvoke(list(messages), config=config), name=name
+        )
         latency_ms = int((time.monotonic() - started) * 1000)
         usage = _usage(response)
         self._log(name, latency_ms, usage)
@@ -192,7 +197,10 @@ class OpenAIClient:
     ) -> ToolTurn:
         bound = self._model.bind_tools(list(tools))
         started = time.monotonic()
-        response = await self._policy.run(lambda: bound.ainvoke(list(messages)), name=name)
+        config = _run_config(name)
+        response = await self._policy.run(
+            lambda: bound.ainvoke(list(messages), config=config), name=name
+        )
         latency_ms = int((time.monotonic() - started) * 1000)
         usage = _usage(response)
         self._log(name, latency_ms, usage)
@@ -212,6 +220,14 @@ class OpenAIClient:
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
         )
+
+
+def _run_config(name: str) -> RunnableConfig:
+    config: RunnableConfig = {"run_name": name}
+    callbacks = current_callbacks()
+    if callbacks:
+        config["callbacks"] = list(callbacks)
+    return config
 
 
 def _refusal(response: BaseMessage) -> str | None:
@@ -334,6 +350,6 @@ def build_llm_clients(policy: ResiliencePolicy) -> tuple[LLMClient, LLMClient]:
     LLM_COMPILE_MODEL names a different model."""
     runtime = build_llm_client(policy)
     compile_model = settings.llm_compile_model
-    if not compile_model or compile_model == runtime.model_name:
+    if settings.llm_provider == "fake" or not compile_model or compile_model == runtime.model_name:
         return runtime, runtime
     return runtime, build_llm_client(policy, model=compile_model)

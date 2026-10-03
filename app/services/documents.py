@@ -39,6 +39,16 @@ class PortNotCoveredError(AppError):
     code = "PORT_NOT_COVERED"
 
 
+class UploadTooLargeError(AppError):
+    status_code = 413
+    code = "UPLOAD_TOO_LARGE"
+
+
+class NotAPdfError(AppError):
+    status_code = 415
+    code = "NOT_A_PDF"
+
+
 @dataclass(frozen=True)
 class DocumentCounts:
     sections: int

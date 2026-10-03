@@ -5,9 +5,10 @@ every due the vessel must pay at that port, with the formula and tariff citation
 figure. The LLM finds and interprets the rules in the document; a deterministic engine does the
 arithmetic. No tariff data is hard-coded.
 
-> **Status:** under construction. Phases 0–7 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
+> **Status:** under construction. Phases 0–8 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
 > (skeleton, data model, rule DSL and calculation engine, OpenAI client layer, PDF ingestion,
-> retrieval and charge catalogue, rule-compilation agent, end-to-end calculation). The architecture is described in
+> retrieval and charge catalogue, rule-compilation agent, end-to-end calculation, uploads and
+> observability). The architecture is described in
 > [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
@@ -24,6 +25,7 @@ TNPA Tariff Book 2024/25; already-ingested files are skipped), then serves the A
 - `GET /health`: process is alive
 - `GET /ready`: database is reachable, plus the number of ingested (`ready`) tariff documents
 - `GET /docs`: Swagger UI, used to upload tariff PDFs and run calculations
+- `POST /v1/documents`: upload a tariff PDF (ingested in the background; poll its status)
 - `GET /v1/documents`, `GET /v1/documents/{id}`: ingested tariff documents and their profile
 - `GET /v1/documents/{id}/charges`: the charges the document defines (the charge catalogue)
 - `GET /v1/documents/{id}/sections/{ref}`: one section's text, e.g. `3.6`
@@ -142,12 +144,30 @@ port" as applying to any self-propelled ship (light dues at the per-metre rate),
 dues on an ordinary call, or leaving a charge unpriced because one of its cases is. Each failure
 mode led to a general fix (an `unpriced` component, tier widths, deductions, shared rule
 semantics for extractor and critic, a critic that grades issues, keeping the best reviewed
-version, citation repair, facts decided with their rule context), but variance remains. In
-practice:
+version, citation repair, facts decided with their rule context). With
+`LLM_COMPILE_MODEL=gpt-5.6-sol` for the offline compile step, a fresh cold compile of all 23
+charges (about 7 minutes, 1.4M tokens; 17 approved, 6 flagged `low_confidence`, none failed)
+priced SUDESTADA exactly as above from both the profile and the plain-language query. Runtime
+calls stay on `gpt-5.6-luna`; a warm calculation takes about 14–26 s, bounded by the slowest
+fact-resolution call (`LLM_MAX_CONCURRENCY=16` runs all batches at once). In practice:
 
 - compile once per document and port (`scripts/compile_rules.py --verbose`), review the rulebook
   (`GET /v1/rules?port=...`, flags and open issues included), and recompile single charges with
   `--charge ... --refresh`;
-- set `LLM_COMPILE_MODEL` to a stronger model for the offline compile step (`gpt-5.6-sol`
-  produced a better-structured light-dues rule in one experiment);
+- use a stronger model for the compile step (`LLM_COMPILE_MODEL`);
 - rules flagged `low_confidence` are priced and marked (`confidence: low`, with open issues).
+
+### Uploading tariffs, the API key, tracing
+
+- **Upload**: in Swagger (`/docs`), `POST /v1/documents` takes a PDF; or
+  `curl -F "file=@tariff.pdf;type=application/pdf" localhost:8080/v1/documents`. The response
+  (`202`) carries the document id; ingestion runs in the background — poll
+  `GET /v1/documents/{id}` until `status` is `ready`. The same file again returns the existing
+  document (`200`); `?force=true` rebuilds it (and its compiled rules).
+- **API key**: set `API_AUTH_KEY` and every `/v1/*` call needs an `X-API-Key` header (Swagger's
+  Authorize button sends it). `/health` and `/ready` stay open.
+- **Tracing**: every calculation is stored with the agent's steps (`GET /v1/calculations/{id}`:
+  sections opened, searches, evidence, extractions, validation problems, reviews, fact decisions).
+  Optional Langfuse tracing (`LANGFUSE_TRACING_ENABLED=true` plus keys) adds one trace per
+  calculation and per standalone compilation, with every model call nested in it (model, latency,
+  tokens, cost); prompts and responses are left out unless `LANGFUSE_CAPTURE_CONTENT=true`.

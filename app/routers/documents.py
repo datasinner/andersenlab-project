@@ -1,10 +1,14 @@
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_session
-from app.models import TariffDocument
+from app.dependencies import get_ingestion
+from app.ingestion.pipeline import IngestionPipeline
+from app.models import DocumentStatus, TariffDocument
 from app.schemas import (
     ChargeOut,
     DocumentDetail,
@@ -12,6 +16,7 @@ from app.schemas import (
     PortOut,
     SectionChild,
     SectionOut,
+    UploadOut,
 )
 from app.services import documents
 
@@ -20,6 +25,43 @@ router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
 def _port_names(document: TariffDocument) -> list[str]:
     return [port["name"] for port in document.ports]
+
+
+@router.post(
+    "",
+    response_model=UploadOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={200: {"model": UploadOut, "description": "Already ingested"}},
+)
+async def upload_document(
+    response: Response,
+    background: BackgroundTasks,
+    file: UploadFile = File(description="A tariff document (PDF)."),
+    force: bool = False,
+    pipeline: IngestionPipeline = Depends(get_ingestion),
+) -> UploadOut:
+    """Upload a tariff PDF. It is ingested in the background (parsing,
+    indexing, profile and charge catalogue); poll GET /v1/documents/{id}
+    until its status is `ready`. Uploading the same file again returns the
+    existing document (200), unless `force` rebuilds it."""
+    limit = settings.max_upload_mb * 1024 * 1024
+    content = await file.read(limit + 1)
+    if len(content) > limit:
+        raise documents.UploadTooLargeError(f"The file is larger than {settings.max_upload_mb} MB")
+    if not content.startswith(b"%PDF"):
+        raise documents.NotAPdfError("The file is not a PDF")
+    filename = Path(file.filename or "tariff.pdf").name[:255]
+
+    registration = await pipeline.register(content, filename, force=force)
+    if not registration.needs_processing:
+        response.status_code = status.HTTP_200_OK
+        return UploadOut(
+            document_id=registration.document_id, status=DocumentStatus.READY, created=False
+        )
+    background.add_task(pipeline.process, registration.document_id, content, filename)
+    return UploadOut(
+        document_id=registration.document_id, status=DocumentStatus.PARSING, created=True
+    )
 
 
 @router.get("", response_model=list[DocumentSummary])

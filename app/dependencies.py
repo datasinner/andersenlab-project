@@ -1,5 +1,6 @@
 from fastapi import Request
 
+from app.ingestion.pipeline import IngestionPipeline
 from app.llm.client import LLMClient
 from app.llm.embeddings import Embedder
 from app.services.calculations import CalculationService
@@ -20,3 +21,7 @@ def get_rulebook(request: Request) -> RulebookService:
 
 def get_calculations(request: Request) -> CalculationService:
     return request.app.state.calculations
+
+
+def get_ingestion(request: Request) -> IngestionPipeline:
+    return request.app.state.ingestion

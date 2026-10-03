@@ -122,7 +122,8 @@ These decisions are made. Do not revisit them or propose alternatives mid-build.
 │   ├── errors.py                  # domain exceptions → HTTP error codes
 │   ├── logging_conf.py            # structlog JSON logging
 │   ├── middleware.py              # request_id, access log, timing
-│   ├── observability.py           # optional Langfuse tracing
+│   ├── security.py                # optional X-API-Key check for /v1 routes
+│   ├── observability.py           # optional Langfuse tracing (one trace per calculation)
 │   ├── domain/
 │   │   ├── vessel.py              # VesselCall, derived quantities, profile mapping (§6.1)
 │   │   ├── ports.py               # match a requested port to a document's ports
