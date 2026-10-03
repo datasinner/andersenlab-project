@@ -1,6 +1,7 @@
 """Ingestion: PDF bytes → a ready, searchable tariff document.
 
-register (sha256, idempotent) → parse → clean → structure → chunk → store
+register (sha256, idempotent) → parse → clean → [optional vision fallback for
+scrambled tables, app/ingestion/vision.py] → structure → chunk → store
 [parsing] → embed [indexing] → document profile + charge catalogue, two
 concurrent LLM calls [cataloguing] → ready. When a rulebook file exported
 from the same PDF is at hand (rulebooks_dir), its profile and catalogue are
@@ -25,6 +26,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.config import settings
 from app.domain.numbers import NumberFormatError, parse_number
 from app.ingestion.catalogue import CatalogueEntry, discover_charges
 from app.ingestion.chunker import ChunkDraft, build_chunks
@@ -32,6 +34,7 @@ from app.ingestion.cleaner import clean
 from app.ingestion.parser import ParsedDocument, PdfParser, PyMuPdfParser
 from app.ingestion.profile import DocumentProfile, read_profile
 from app.ingestion.structure import Section, build_sections, table_count
+from app.ingestion.vision import transcribe_suspect_tables
 from app.llm.client import LLMClient
 from app.llm.embeddings import Embedder
 from app.models import (
@@ -76,12 +79,16 @@ class IngestionPipeline:
         embedder: Embedder,
         parser: PdfParser | None = None,
         rulebooks_dir: str | None = None,
+        vision_fallback: bool | None = None,
     ) -> None:
         self._sessions = session_factory
         self._llm = llm
         self._embedder = embedder
         self._parser = parser or PyMuPdfParser()
         self._rulebooks_dir = rulebooks_dir
+        self._vision_fallback = (
+            settings.parser_vision_fallback if vision_fallback is None else vision_fallback
+        )
 
     async def ingest(self, content: bytes, filename: str, *, force: bool = False) -> IngestResult:
         """Register and process in one go (the CLI and container start)."""
@@ -113,6 +120,9 @@ class IngestionPipeline:
         started = time.monotonic()
         try:
             parsed = await asyncio.to_thread(self._parse, content)
+            if self._vision_fallback:
+                pages = await transcribe_suspect_tables(self._llm, content, parsed)
+                log.info("ingestion_vision_fallback", pages_transcribed=pages)
             sections = build_sections(parsed)
             chunks = build_chunks(sections)
             await self._store_structure(document_id, parsed, sections, chunks)

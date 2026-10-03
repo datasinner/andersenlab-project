@@ -1,7 +1,8 @@
 """Answer repeated structured model calls from the database.
 
 The runtime calls (reading a plain-language query, deciding a call's facts)
-and the ingestion calls (document profile, charge catalogue) are pure
+and the ingestion calls (document profile, charge catalogue, table
+transcription) are pure
 functions of their input as far as the system is concerned. CachingLLMClient
 keys each such call by everything that determines it (model, call name,
 output schema, effort, messages) and stores the answer, so pricing the same
@@ -28,7 +29,9 @@ from app.models import LLMResponse
 
 logger = structlog.get_logger("app.llm")
 
-CACHED_CALLS = frozenset({"parse_query", "resolve_facts", "document_profile", "charge_catalogue"})
+CACHED_CALLS = frozenset(
+    {"parse_query", "resolve_facts", "document_profile", "charge_catalogue", "transcribe_tables"}
+)
 
 
 def with_response_cache(

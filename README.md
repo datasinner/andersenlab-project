@@ -106,7 +106,7 @@ uv run python scripts/rulebook.py import
 uv run uvicorn app.main:app --reload
 ```
 
-`make test` runs the 336 tests (unit and integration) against a throwaway `test` database on the
+`make test` runs the 344 tests (unit and integration) against a throwaway `test` database on the
 same Postgres server, with the LLM provider forced to a fake: no API key or network needed.
 `make lint` runs `ruff check` and `ruff format --check`.
 
@@ -242,11 +242,14 @@ gates is [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
 
 1. **Ingestion** (once per PDF). PyMuPDF parses the text layer: two-up landscape sheets are split
    into their printed pages, running headers and page numbers are removed, tables are kept whole
-   as markdown, ligatures are spelled out. A section tree is built from numbered or styled
-   headings, then chunks with breadcrumbs (whole tables, one chunk per defined term). Chunks are
-   embedded and indexed for full-text search in Postgres. Two LLM calls read the document
-   profile (ports, currency, VAT, validity) and the charge catalogue (each charge with its
-   sections, payer and trigger).
+   as markdown, ligatures are spelled out. Optionally, tables that come out scrambled (ragged
+   rows, one column, mostly empty) are re-transcribed from a page image by a vision call, and
+   kept only if every number in them is in the page's text. A section tree is built from
+   numbered or styled headings, then chunks with breadcrumbs (whole tables, one chunk per
+   defined term). Chunks are embedded and indexed for full-text search in Postgres. Two LLM
+   calls read the document profile (ports, currency, VAT, validity) and the charge catalogue
+   (each charge with its sections, payer and trigger), unless a rulebook file for the same PDF
+   already holds them.
 2. **Rule compilation** (once per document and port; LangGraph, per charge, concurrently):
    - *research*: a tool-using agent searches (pgvector + full-text, fused with reciprocal rank
      fusion), opens sections, looks up definitions, and submits its evidence;
@@ -285,6 +288,7 @@ Set in `.env` (see `.env.example`); the main settings:
 | `RULES_REUSE_OLDER_PROMPTS` | `true` | After a prompt change, keep using cached rules compiled with older prompts until recompiled with `--refresh` |
 | `LLM_RESPONSE_CACHE` | `true` | Answer repeated query-parsing, fact-resolution and ingestion calls from the database |
 | `CALCULATION_TIMEOUT_SECONDS` | `300` | Whole calculation; Nginx allows 315 s |
+| `PARSER_VISION_FALLBACK` | `false` | Re-transcribe scrambled tables from a page image (OpenAI vision), kept only if its numbers are in the page text |
 | `TARIFFS_DIR` | `./data/tariffs` | PDFs ingested on start |
 | `RULEBOOKS_DIR` | `./data/rulebooks` | Rulebook files loaded on start |
 | `MAX_UPLOAD_MB` | `25` | Upload size limit |
@@ -354,8 +358,9 @@ Set in `.env` (see `.env.example`); the main settings:
   cases, drydock dues, visiting pleasure vessels. They are priced and marked, not hidden.
 - **Facts come from a model.** For ambiguous calls the fact resolver may decide differently from
   run to run; each fact is reported with its reason, and `overrides.facts` settles it.
-- **Text-layer PDFs only.** Scanned tariffs need OCR first (`PARSER_VISION_FALLBACK` is reserved
-  but not implemented).
+- **Text-layer PDFs only.** Scanned tariffs (no text layer) need OCR first. Tables the text
+  layer scrambles can be re-read from a page image (`PARSER_VISION_FALLBACK=true`); a
+  transcription is used only when every number in it is printed in the page's text.
 - **VAT is reported, not added** (`vat.included: false`); amounts are as the tariff prints them.
 - **One document per port and date.** The newest ready document in force on the arrival date is
   used, unless `document_id` is given.

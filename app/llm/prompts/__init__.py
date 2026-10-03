@@ -44,6 +44,7 @@ from app.llm.prompts import (  # noqa: E402
     parse_query,
     research,
     resolve_facts,
+    transcribe_tables,
 )
 
 PROMPTS: dict[str, PromptTemplate] = {
@@ -56,6 +57,7 @@ PROMPTS: dict[str, PromptTemplate] = {
         parse_query.PROMPT,
         research.PROMPT,
         resolve_facts.PROMPT,
+        transcribe_tables.PROMPT,
     )
 }
 

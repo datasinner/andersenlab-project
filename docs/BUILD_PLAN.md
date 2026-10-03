@@ -450,10 +450,13 @@ task). Each step moves `tariff_document.status`; any exception sets `failed` wit
    payer and trigger. This is how the system knows that "light dues" or "running of vessel lines"
    exist, without a hard-coded list.
 
-`PARSER_VISION_FALLBACK=true` adds one step after parsing. Pages whose tables look broken (cells
-mixing labels and numbers, ragged columns) are rendered to PNG and transcribed to markdown by an
-OpenAI vision call. The text layer stays the source of truth for grounding, so a vision
-transcription is only used if its numbers also appear in the page text.
+`PARSER_VISION_FALLBACK=true` adds one step after parsing (`app/ingestion/vision.py`). Pages whose
+tables look broken (ragged rows, a single column, more than half of the cells empty) are rendered
+to PNG and transcribed to markdown by an OpenAI vision call (`transcribe_tables` prompt). The text
+layer stays the source of truth for grounding, so a transcription is only used if it has as many
+tables as the parser found on the page and every number in it also appears in the page text;
+otherwise, or if the call fails, the page is kept as parsed. On the TNPA book no table qualifies,
+so enabling it costs nothing there; a forced call on its pilotage page (§3.3) was accepted.
 
 ---
 

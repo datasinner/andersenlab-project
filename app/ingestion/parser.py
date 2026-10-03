@@ -55,6 +55,9 @@ class LogicalPage:
     height: float
     elements: list[Element] = field(default_factory=list)
     label: str | None = None  # the printed page number, when one is found
+    # Horizontal bounds of this logical page on the PDF page (a 2-up sheet holds two).
+    x0: float | None = None
+    x1: float | None = None
 
 
 @dataclass
@@ -159,7 +162,9 @@ def _logical_page(
     for bbox, markdown in column_tables:
         elements.append(TableBlock(markdown=markdown, y=bbox[1]))
     elements.sort(key=lambda element: element.y)
-    return LogicalPage(pdf_page=pdf_page, height=height, elements=_attach_bullets(elements))
+    return LogicalPage(
+        pdf_page=pdf_page, height=height, elements=_attach_bullets(elements), x0=x0, x1=x1
+    )
 
 
 def _inside(line: _RawLine, bbox: tuple[float, float, float, float]) -> bool:
