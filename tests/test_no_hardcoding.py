@@ -69,8 +69,16 @@ def _tariff_rates() -> set[Decimal]:
     synthetic = ROOT / "scripts" / "make_synthetic_tariff.py"
     if synthetic.exists():
         rates |= _decimals(synthetic.read_text())
-    # Structural values that are not rates.
-    return {rate for rate in rates if rate >= 1 and rate != rate.to_integral_value()}
+    # Skip values that are not distinctive: below 1, whole numbers, and
+    # anything with fewer than three significant digits (2.5, 4.2), which
+    # ordinary code is full of (layout factors, section numbers).
+    return {
+        rate
+        for rate in rates
+        if rate >= 1
+        and rate != rate.to_integral_value()
+        and len(rate.normalize().as_tuple().digits) >= 3
+    }
 
 
 def test_no_port_authority_or_vessel_names_in_app():

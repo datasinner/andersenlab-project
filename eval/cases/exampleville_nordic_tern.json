@@ -1,0 +1,47 @@
+{
+  "name": "NORDIC TERN at Exampleville (synthetic tariff, generalisation test)",
+  "port": "Exampleville",
+  "document_file": "data/synthetic/exampleville_port_charges_2025.pdf",
+  "vessel_file": "tests/fixtures/vessels/nordic_tern.json",
+  "query": "What will the general cargo ship NORDIC TERN (Norway flag, built 2016) pay at Exampleville? She is 18,400 GT and 9,950 NT, 24,000 DWT, 172.5 m long with a 27 m beam and a 9.8 m draft, and has an Environmental Ship Index score of 35. She arrives on 10 March 2025 at 08:00 and leaves on 17 March 2025 at 06:00, spending 6.4 days alongside to discharge 12,000 tonnes of steel coils.",
+  "tolerance_pct": "0.01",
+  "expected": [
+    {
+      "label": "Harbour dues",
+      "amount": "486.00",
+      "section_title": "Harbour Dues",
+      "note": "ceil(9,950 / 100) = 100 units: 100 × 4.20 = 420.00; days beyond the fifth: ceil(6.4 − 5) = 2, so 100 × 0.60 × 2 = 120.00; 540.00 less the 10% ESI reduction = 486.00"
+    },
+    {
+      "label": "Pilotage",
+      "amount": "4900.00",
+      "section_title": "Pilotage",
+      "note": "LOA 172.5 m is in the 100.01–200 m band: 2,450.00 × 2 operations"
+    },
+    {
+      "label": "Towage",
+      "amount": "6300.00",
+      "section_title": "Towage",
+      "note": "18,400 GT → 2 tugs → 3,150.00 per operation × 2 operations (towage is compulsory over 120 m LOA)"
+    },
+    {
+      "label": "Berth dues",
+      "amount": "1178.80",
+      "section_title": "Berth Dues",
+      "note": "100 m × 1.10 + ceil(72.5) = 73 m × 0.80 = 168.40 per day × ceil(6.4) = 7 days"
+    },
+    {
+      "label": "Conservancy levy",
+      "amount": "644.00",
+      "section_title": "Conservancy Levy",
+      "note": "18,400 × 0.035, below the 2,500.00 maximum"
+    },
+    {
+      "label": "Waste reception fee",
+      "amount": "180.00",
+      "section_title": "Waste Reception Fee",
+      "note": "flat per call; no exemption certificate"
+    }
+  ],
+  "expected_total": "13688.80"
+}

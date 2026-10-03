@@ -5,10 +5,10 @@ every due the vessel must pay at that port, with the formula and tariff citation
 figure. The LLM finds and interprets the rules in the document; a deterministic engine does the
 arithmetic. No tariff data is hard-coded.
 
-> **Status:** under construction. Phases 0–8 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
+> **Status:** under construction. Phases 0–9 of [docs/BUILD_PLAN.md](docs/BUILD_PLAN.md) are done
 > (skeleton, data model, rule DSL and calculation engine, OpenAI client layer, PDF ingestion,
 > retrieval and charge catalogue, rule-compilation agent, end-to-end calculation, uploads and
-> observability). The architecture is described in
+> observability, generalisation proof). The architecture is described in
 > [docs/architecture.md](docs/architecture.md).
 
 ## Quick start
@@ -117,8 +117,24 @@ this kind, a rule default, or your `overrides`) and assumptions, plus the charge
 apply, aren't priced in the document, are only charged on request, or are paid by others.
 Swagger (`/docs`) has the SUDESTADA profile as a ready-made example.
 
-`make eval` prices the reference call from the profile JSON and from a plain-language description
-and compares both with the reference values (`eval/cases/sudestada_durban.json`; tolerance 1%).
+`make eval` prices every case in `eval/cases/` from the profile JSON and from a plain-language
+description and compares both with the expected values: the reference call
+(`eval/cases/sudestada_durban.json`; tolerance 1%) and a generalisation case (below). It ingests a
+case's document and compiles its rulebook first if needed; `--case <name>` runs one case and
+`--refresh` recompiles the rules.
+
+**Another port, no code change.** `scripts/make_synthetic_tariff.py` renders a tariff for an
+invented port, Exampleville (`data/synthetic/`), that shares nothing with the TNPA book but the
+subject: one column, unnumbered headings, euros, harbour dues per 100 NT with a per-day charge
+beyond a free period and a minimum, exclusive and stackable reductions, pilotage by length bands,
+towage that joins a tug-allocation table to a charge-per-tugs table, berth dues in marginal
+length tiers, a per-GT levy with a cap, an exemption, and charges paid by others. With `app/`
+unchanged, ingesting it and compiling its eight vessel charges took under two minutes (155k
+tokens), and the general cargo ship NORDIC TERN was priced exactly: all six expected charges and
+the total (13,688.80 EUR, worked out by hand in `eval/cases/exampleville_nordic_tern.json`) from
+both the profile and the plain-language query, with passenger levy and yacht dues not applicable
+and wharfage and licences excluded. `tests/test_no_hardcoding.py` fails if any name or figure
+from either tariff appears under `app/`.
 
 ### Accuracy and reliability, honestly
 
