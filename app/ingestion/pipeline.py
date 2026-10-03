@@ -1,0 +1,326 @@
+"""Ingestion: PDF bytes → a ready, searchable tariff document.
+
+register (sha256, idempotent) → parse → clean → [optional vision fallback for
+scrambled tables, app/ingestion/vision.py] → structure → chunk → store
+[parsing] → embed [indexing] → document profile + charge catalogue, two
+concurrent LLM calls [cataloguing] → ready. When a rulebook file exported
+from the same PDF is at hand (rulebooks_dir), its profile and catalogue are
+used instead of the two LLM calls: they are what its rules were compiled
+against, and they cost nothing.
+
+Each stage commits, so a document's status shows how far it got. Any
+failure marks the document failed with the error; ingesting the same bytes
+again retries it. A document that is already ready is left untouched unless
+force=True (e.g. after a prompt change), which rebuilds it in place.
+"""
+
+import asyncio
+import hashlib
+import time
+import uuid
+from dataclasses import dataclass
+from decimal import Decimal
+
+import structlog
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.config import settings
+from app.domain.numbers import NumberFormatError, parse_number
+from app.ingestion.catalogue import CatalogueEntry, discover_charges
+from app.ingestion.chunker import ChunkDraft, build_chunks
+from app.ingestion.cleaner import clean
+from app.ingestion.parser import ParsedDocument, PdfParser, PyMuPdfParser
+from app.ingestion.profile import DocumentProfile, read_profile
+from app.ingestion.structure import Section, build_sections, table_count
+from app.ingestion.vision import transcribe_suspect_tables
+from app.llm.client import LLMClient
+from app.llm.embeddings import Embedder
+from app.models import (
+    ChargeCatalogueEntry,
+    Chunk,
+    CompiledRule,
+    DocumentSection,
+    DocumentStatus,
+    TariffDocument,
+)
+from app.services.rulebook_files import apply_profile_and_catalogue, find_rulebook_file
+
+logger = structlog.get_logger("app.ingestion")
+
+EMBEDDING_BATCH_SIZE = 64
+_MAX_ERROR_CHARS = 2000
+
+
+@dataclass(frozen=True)
+class IngestResult:
+    document_id: uuid.UUID
+    status: DocumentStatus
+    created: bool  # False when these exact bytes were already ingested
+    sections: int = 0
+    chunks: int = 0
+    tables: int = 0
+    charges: int = 0
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class Registration:
+    document_id: uuid.UUID
+    needs_processing: bool  # False when these exact bytes are already ingested
+
+
+class IngestionPipeline:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        llm: LLMClient,
+        embedder: Embedder,
+        parser: PdfParser | None = None,
+        rulebooks_dir: str | None = None,
+        vision_fallback: bool | None = None,
+    ) -> None:
+        self._sessions = session_factory
+        self._llm = llm
+        self._embedder = embedder
+        self._parser = parser or PyMuPdfParser()
+        self._rulebooks_dir = rulebooks_dir
+        self._vision_fallback = (
+            settings.parser_vision_fallback if vision_fallback is None else vision_fallback
+        )
+
+    async def ingest(self, content: bytes, filename: str, *, force: bool = False) -> IngestResult:
+        """Register and process in one go (the CLI and container start)."""
+        registration = await self.register(content, filename, force=force)
+        if not registration.needs_processing:
+            return IngestResult(registration.document_id, DocumentStatus.READY, created=False)
+        return await self.process(registration.document_id, content, filename)
+
+    async def register(
+        self, content: bytes, filename: str, *, force: bool = False
+    ) -> "Registration":
+        """Record the document by checksum (idempotent). Fast: an upload calls
+        this in the request and runs process() in the background."""
+        checksum = hashlib.sha256(content).hexdigest()
+        document_id, already_ready = await self._register(content, checksum, filename, force)
+        if already_ready:
+            logger.info(
+                "ingestion_skipped",
+                document_id=str(document_id),
+                filename=filename,
+                reason="already ingested",
+            )
+        return Registration(document_id, needs_processing=not already_ready)
+
+    async def process(self, document_id: uuid.UUID, content: bytes, filename: str) -> IngestResult:
+        """Parse, index and catalogue a registered document. Never raises: a
+        failure is recorded on the document."""
+        log = logger.bind(document_id=str(document_id), filename=filename)
+        started = time.monotonic()
+        try:
+            parsed = await asyncio.to_thread(self._parse, content)
+            if self._vision_fallback:
+                pages = await transcribe_suspect_tables(self._llm, content, parsed)
+                log.info("ingestion_vision_fallback", pages_transcribed=pages)
+            sections = build_sections(parsed)
+            chunks = build_chunks(sections)
+            await self._store_structure(document_id, parsed, sections, chunks)
+            log.info("ingestion_parsed", sections=len(sections), chunks=len(chunks))
+
+            await self._embed_chunks(document_id)
+            await self._set_status(document_id, DocumentStatus.CATALOGUING)
+
+            known = find_rulebook_file(self._rulebooks_dir, hashlib.sha256(content).hexdigest())
+            if known is not None:
+                await self._store_known(document_id, known)
+                charge_count = len(known["catalogue"])
+                log.info("ingestion_catalogue_from_rulebook_file", charges=charge_count)
+            else:
+                (profile, _), (charges, _) = await asyncio.gather(
+                    read_profile(self._llm, parsed, sections),
+                    discover_charges(self._llm, sections),
+                )
+                await self._store_results(document_id, profile, charges)
+                charge_count = len(charges)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"[:_MAX_ERROR_CHARS]
+            log.exception("ingestion_failed")
+            await self._set_status(document_id, DocumentStatus.FAILED, error=error)
+            return IngestResult(document_id, DocumentStatus.FAILED, created=True, error=error)
+
+        log.info("ingestion_ready", duration_ms=int((time.monotonic() - started) * 1000))
+        return IngestResult(
+            document_id,
+            DocumentStatus.READY,
+            created=True,
+            sections=len(sections),
+            chunks=len(chunks),
+            tables=table_count(sections),
+            charges=charge_count,
+        )
+
+    def _parse(self, content: bytes) -> ParsedDocument:
+        # CPU-bound; runs in a worker thread so the event loop stays free.
+        return clean(self._parser.parse(content))
+
+    async def _register(
+        self, content: bytes, checksum: str, filename: str, force: bool
+    ) -> tuple[uuid.UUID, bool]:
+        async with self._sessions() as session:
+            document = await session.scalar(
+                select(TariffDocument).where(TariffDocument.checksum == checksum)
+            )
+            if document is not None and document.status == DocumentStatus.READY and not force:
+                return document.id, True
+            if document is None:
+                document = TariffDocument(
+                    source_filename=filename, content=content, checksum=checksum
+                )
+                session.add(document)
+                try:
+                    await session.flush()
+                except IntegrityError:
+                    # The same bytes were registered concurrently; use that row.
+                    await session.rollback()
+                    existing = await session.scalar(
+                        select(TariffDocument).where(TariffDocument.checksum == checksum)
+                    )
+                    assert existing is not None
+                    return existing.id, existing.status == DocumentStatus.READY
+            else:
+                # A previous attempt failed or was interrupted, or a rebuild
+                # was forced: start over.
+                await _delete_derived_rows(session, document.id)
+            document.status = DocumentStatus.PARSING
+            document.error = None
+            await session.commit()
+            return document.id, False
+
+    async def _store_structure(
+        self,
+        document_id: uuid.UUID,
+        parsed: ParsedDocument,
+        sections: list[Section],
+        chunks: list[ChunkDraft],
+    ) -> None:
+        async with self._sessions() as session:
+            section_ids: dict[int, int] = {}
+            for section in sections:
+                row = DocumentSection(
+                    document_id=document_id,
+                    parent_id=section_ids[section.parent.ordinal] if section.parent else None,
+                    ref=section.ref,
+                    title=section.title,
+                    path=section.path,
+                    level=section.level,
+                    page_start=section.page_start,
+                    page_end=section.page_end,
+                    ordinal=section.ordinal,
+                    kind=section.kind,
+                )
+                session.add(row)
+                await session.flush()
+                section_ids[section.ordinal] = row.id
+            session.add_all(
+                Chunk(
+                    document_id=document_id,
+                    section_id=section_ids[draft.section_ordinal],
+                    kind=draft.kind,
+                    content=draft.content,
+                    page=draft.page,
+                    printed_page=draft.printed_page,
+                    ordinal=ordinal,
+                    token_count=draft.token_count,
+                )
+                for ordinal, draft in enumerate(chunks, start=1)
+            )
+            document = await session.get(TariffDocument, document_id)
+            assert document is not None
+            document.page_count = parsed.page_count
+            document.status = DocumentStatus.INDEXING
+            await session.commit()
+
+    async def _embed_chunks(self, document_id: uuid.UUID) -> None:
+        async with self._sessions() as session:
+            chunks = list(
+                await session.scalars(
+                    select(Chunk).where(Chunk.document_id == document_id).order_by(Chunk.ordinal)
+                )
+            )
+            for start in range(0, len(chunks), EMBEDDING_BATCH_SIZE):
+                batch = chunks[start : start + EMBEDDING_BATCH_SIZE]
+                vectors = await self._embedder.embed(
+                    [chunk.content for chunk in batch], name="embed_chunks"
+                )
+                for chunk, vector in zip(batch, vectors, strict=True):
+                    chunk.embedding = vector
+            await session.commit()
+
+    async def _store_results(
+        self,
+        document_id: uuid.UUID,
+        profile: DocumentProfile,
+        charges: list[CatalogueEntry],
+    ) -> None:
+        async with self._sessions() as session:
+            session.add_all(
+                ChargeCatalogueEntry(
+                    document_id=document_id,
+                    charge_id=charge.charge_id,
+                    name=charge.name,
+                    section_refs=charge.section_refs,
+                    payer=charge.payer,
+                    trigger=charge.trigger,
+                    description=charge.description,
+                )
+                for charge in charges
+            )
+            document = await session.get(TariffDocument, document_id)
+            assert document is not None
+            document.title = profile.title
+            document.authority = profile.authority
+            document.currency = (profile.currency or "").upper()[:3] or None
+            document.vat_rate = _vat_rate(profile.vat_percent)
+            document.effective_from = profile.effective_from
+            document.effective_to = profile.effective_to
+            document.ports = [port.model_dump() for port in profile.ports]
+            document.status = DocumentStatus.READY
+            await session.commit()
+
+    async def _store_known(self, document_id: uuid.UUID, rulebook: dict) -> None:
+        async with self._sessions() as session:
+            document = await session.get(TariffDocument, document_id)
+            assert document is not None
+            await apply_profile_and_catalogue(session, document, rulebook)
+            document.status = DocumentStatus.READY
+            await session.commit()
+
+    async def _set_status(
+        self, document_id: uuid.UUID, status: DocumentStatus, error: str | None = None
+    ) -> None:
+        async with self._sessions() as session:
+            document = await session.get(TariffDocument, document_id)
+            assert document is not None
+            document.status = status
+            document.error = error
+            await session.commit()
+
+
+async def _delete_derived_rows(session: AsyncSession, document_id: uuid.UUID) -> None:
+    # Compiled rules cite chunk ids, which a rebuild replaces.
+    await session.execute(delete(CompiledRule).where(CompiledRule.document_id == document_id))
+    await session.execute(
+        delete(ChargeCatalogueEntry).where(ChargeCatalogueEntry.document_id == document_id)
+    )
+    await session.execute(delete(Chunk).where(Chunk.document_id == document_id))
+    await session.execute(delete(DocumentSection).where(DocumentSection.document_id == document_id))
+
+
+def _vat_rate(vat_percent: str | None) -> Decimal | None:
+    if not vat_percent:
+        return None
+    try:
+        return parse_number(vat_percent) / 100
+    except NumberFormatError:
+        return None

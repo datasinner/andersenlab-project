@@ -1,0 +1,46 @@
+{
+  "charge_id": "vts_dues",
+  "name": "Vessel traffic services (VTS) charges",
+  "section_refs": ["2.1.1"],
+  "port_key": "Durban",
+  "currency": "ZAR",
+  "payer": "vessel",
+  "status": "priced",
+  "exemptions": [
+    {
+      "description": "SAPS, SANDF, SAMSA and SA medical & research vessels",
+      "when": [{"fact": "is_state_or_research_vessel", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 201, "section_ref": "2.1.1", "page": 6, "quote": "Vessels belonging to SAMSA"}
+    },
+    {
+      "description": "Vessels returning from anchorage at the order of the Harbour Master",
+      "when": [{"fact": "returning_from_anchorage_at_harbour_master_order", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 201, "section_ref": "2.1.1", "page": 6, "quote": "Vessels returning from anchorage at the order of the Harbour Master"}
+    },
+    {
+      "description": "Small vessels and pleasure vessels (Section 4, Clause 4.2)",
+      "when": [{"fact": "is_small_or_pleasure_vessel", "op": "eq", "value": true}],
+      "citation": {"chunk_id": 201, "section_ref": "2.1.1", "page": 6, "quote": "(small vessels and pleasure vessels)"}
+    }
+  ],
+  "components": [
+    {
+      "kind": "per_unit",
+      "id": "per_gt",
+      "label": "Per GT per port call at Durban and Saldanha Bay",
+      "rate": "0.65",
+      "units": {"basis": "gross_tonnage", "unit_size": "1", "rounding": "pro_rata"}
+    }
+  ],
+  "minimum": "235.52",
+  "facts": [
+    {"name": "is_state_or_research_vessel", "type": "bool", "description": "Vessel belongs to SAPS, SANDF or SAMSA, or is an SA medical & research vessel", "default_value": false},
+    {"name": "returning_from_anchorage_at_harbour_master_order", "type": "bool", "description": "Vessel is returning from anchorage at the order of the Harbour Master", "default_value": false},
+    {"name": "is_small_or_pleasure_vessel", "type": "bool", "description": "Small vessel or pleasure vessel under Section 4, Clause 4.2", "default_value": false}
+  ],
+  "citations": [
+    {"chunk_id": 201, "section_ref": "2.1.1", "page": 6, "quote": "Payable per GT per port call at the ports of Durban and Saldanha Bay"},
+    {"chunk_id": 201, "section_ref": "2.1.1", "page": 6, "quote": "Minimum fee"}
+  ],
+  "notes": ["Durban has its own rate (shared with Saldanha Bay); other ports pay a lower rate per GT."]
+}

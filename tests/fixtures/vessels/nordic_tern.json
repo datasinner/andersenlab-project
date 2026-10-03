@@ -1,0 +1,25 @@
+{
+  "vessel_metadata": {
+    "name": "NORDIC TERN",
+    "built_year": 2016,
+    "flag": "NOR - Norway"
+  },
+  "technical_specs": {
+    "type": "General Cargo",
+    "dwt": 24000,
+    "gross_tonnage": 18400,
+    "net_tonnage": 9950,
+    "loa_meters": 172.5,
+    "beam_meters": 27.0,
+    "draft_sw_s_w_t": [9.8, 0.0, 0.0],
+    "esi_score": 35
+  },
+  "operational_data": {
+    "cargo_quantity_mt": 12000,
+    "days_alongside": 6.4,
+    "arrival_time": "2025-03-10T08:00:00",
+    "departure_time": "2025-03-17T06:00:00",
+    "activity": "Discharging steel coils",
+    "num_operations": 2
+  }
+}

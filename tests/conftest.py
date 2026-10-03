@@ -1,0 +1,19 @@
+import os
+
+# The whole app stack (Settings, the SQLAlchemy engine, Alembic's env.py) is
+# constructed at import time, so the test database and the fake LLM
+# provider must be selected before anything under app.* is imported -
+# hence these run as the very first thing pytest loads, and every app.*
+# import in fixtures is deferred into fixture bodies.
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://tariff:tariff@localhost:5432/test"
+os.environ["LLM_PROVIDER"] = "fake"
+# Blank (= unset) even if .env has a real key: tests never reach the network.
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["LLM_COMPILE_MODEL"] = ""
+os.environ["APP_ENV"] = "test"
+os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
+os.environ["API_AUTH_KEY"] = ""
+# Tests script every LLM answer; a bundled rulebook file must not stand in for them.
+os.environ["RULEBOOKS_DIR"] = ""
+# The compile tests script up to three review rounds (the default allows two).
+os.environ["AGENT_MAX_REVISIONS"] = "2"

@@ -1,0 +1,42 @@
+{
+  "name": "MORVEN at Exampleville (synthetic tariff: a minimum, and towage not compulsory)",
+  "port": "Exampleville",
+  "document_file": "data/synthetic/exampleville_port_charges_2025.pdf",
+  "vessel_file": "tests/fixtures/vessels/morven.json",
+  "query": "What will the Dutch general cargo coaster MORVEN (built 2009) pay at Exampleville? She is 2,600 GT and 1,450 NT, 3,800 DWT, 78 m long with a 12.5 m beam and a 5.1 m draft. She arrives on 2 June 2025 at 10:00 and sails on 5 June 2025 at 15:00, after 3.2 days alongside loading 3,000 tonnes of timber.",
+  "tolerance_pct": "0.01",
+  "expected": [
+    {
+      "label": "Harbour dues",
+      "amount": "250.00",
+      "section_title": "Harbour Dues",
+      "note": "ceil(1,450 / 100) = 15 units × 4.20 = 63.00; 3.2 days is not beyond the fifth day; raised to the 250.00 minimum per call; no reduction applies"
+    },
+    {
+      "label": "Pilotage",
+      "amount": "2400.00",
+      "section_title": "Pilotage",
+      "note": "compulsory from 70 m LOA; 78 m is in the up-to-100 m band: 1,200.00 × 2 operations, both in daytime"
+    },
+    {
+      "label": "Berth dues",
+      "amount": "343.20",
+      "section_title": "Berth Dues",
+      "note": "78 m, all within the first 100 metres: 78 × 1.10 = 85.80 per day × ceil(3.2) = 4 days"
+    },
+    {
+      "label": "Conservancy levy",
+      "amount": "91.00",
+      "section_title": "Conservancy Levy",
+      "note": "2,600 × 0.035"
+    },
+    {
+      "label": "Waste reception fee",
+      "amount": "180.00",
+      "section_title": "Waste Reception Fee",
+      "note": "flat per call; no exemption certificate"
+    }
+  ],
+  "expected_total": "3264.20",
+  "note": "Towage is compulsory only over 120 m LOA and none was ordered, so it must not be charged; the expected total checks that."
+}

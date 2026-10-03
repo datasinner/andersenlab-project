@@ -1,0 +1,24 @@
+{
+  "vessel_metadata": {
+    "name": "MORVEN",
+    "built_year": 2009,
+    "flag": "NLD - Netherlands"
+  },
+  "technical_specs": {
+    "type": "General Cargo",
+    "dwt": 3800,
+    "gross_tonnage": 2600,
+    "net_tonnage": 1450,
+    "loa_meters": 78.0,
+    "beam_meters": 12.5,
+    "draft_sw_s_w_t": [5.1, 0.0, 0.0]
+  },
+  "operational_data": {
+    "cargo_quantity_mt": 3000,
+    "days_alongside": 3.2,
+    "arrival_time": "2025-06-02T10:00:00",
+    "departure_time": "2025-06-05T15:00:00",
+    "activity": "Loading timber",
+    "num_operations": 2
+  }
+}

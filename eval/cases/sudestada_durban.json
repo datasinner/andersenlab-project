@@ -1,0 +1,20 @@
+{
+  "name": "SUDESTADA at Durban (TNPA Tariff Book 2024/25)",
+  "port": "Durban",
+  "vessel_file": "tests/fixtures/vessels/sudestada.json",
+  "query": "What port dues will the bulk carrier SUDESTADA (Malta flag, built 2010) pay at Durban? She is 51,300 GT, 31,192 NT and 93,274 DWT, 229.2 m long with a 38 m beam and a 14.9 m draft. She arrives on 15 November 2024 at 10:12 and sails on 22 November 2024 at 13:00, spending 3.39 days alongside to load 40,000 tonnes of iron ore for export.",
+  "tolerance_pct": "1.0",
+  "expected": [
+    {"label": "Light Dues", "amount": "60062.04", "section": "1.1.1"},
+    {"label": "Port Dues", "amount": "199549.22", "section": "4.1.1"},
+    {"label": "Towage Dues", "amount": "147074.38", "section": "3.6"},
+    {"label": "VTS Dues", "amount": "33315.75", "section": "2.1.1"},
+    {"label": "Pilotage Dues", "amount": "47189.94", "section": "3.3"},
+    {
+      "label": "Running Lines",
+      "amount": "19639.50",
+      "section": "3.8",
+      "note": "The reference value equals §3.8 Berthing services; §3.9 Running of vessel lines is priced separately."
+    }
+  ]
+}

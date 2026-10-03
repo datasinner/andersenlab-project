@@ -1,0 +1,24 @@
+{
+  "document": "tnpa_tariff_book_2024_25.pdf",
+  "k": 5,
+  "threshold": 0.9,
+  "cases": [
+    {"query": "light dues per 100 tons", "expected": ["1.1.1"]},
+    {"query": "vessel traffic services charge per gross ton per port call", "expected": ["2.1.1"]},
+    {"query": "pilotage fee per service basic fee", "expected": ["3.3"]},
+    {"query": "tug assistance fee by vessel tonnage", "expected": ["3.6"]},
+    {"query": "berthing services fee per service", "expected": ["3.8"]},
+    {"query": "running of vessel lines mooring boat", "expected": ["3.9"]},
+    {"query": "port dues per 24 hour period pro rata", "expected": ["4.1.1"]},
+    {"query": "berth dues for vessels not handling cargo", "expected": ["4.1.2"]},
+    {"query": "reduction for vessels not engaged in cargo working", "expected": ["4.1.1"]},
+    {"query": "surcharge for tug services outside ordinary working hours", "expected": ["3.6"]},
+    {"query": "ordinary working hours of marine services at each port", "expected": ["3.1"]},
+    {"query": "definition of a vessel's tonnage for port tariff purposes", "expected_titles": ["Definitions"], "expected": ["1.1", "4.1", "2.1", "3.1"]},
+    {"query": "dry bulk cargo dues on exports", "expected": ["7.2"]},
+    {"query": "SAMSA levy", "expected": ["1.2"]},
+    {"query": "pilotage exemption certificate fees", "expected": ["3.5"]},
+    {"query": "fire tender turn-out fee", "expected": ["4.3.1"]},
+    {"query": "fresh water supply to vessels", "expected": ["4.5"]}
+  ]
+}
