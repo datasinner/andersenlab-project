@@ -818,17 +818,22 @@ and limitations.
 
 ## 17. Definition of done
 
-- [ ] Clean clone → `cp .env.example .env` → add the API key → `docker compose up --build` → working system
-- [ ] SUDESTADA / Durban: all six reference charges within 1%, each with formula, citations, assumptions
-- [ ] Synthetic port priced correctly with no code change
-- [ ] No tariff data under `app/` (guard test green)
-- [ ] `make test` passes offline; `make lint` passes
-- [ ] Failed and partial calculations visible in the database and the API
-- [ ] The compiled rulebook for a port is exportable and readable by a human
-- [ ] README explains every design decision a reviewer might question, including why the LLM never
+- [x] Clean clone → `cp .env.example .env` → add the API key → `docker compose up --build` → working system
+- [x] SUDESTADA / Durban: all six reference charges within 1%, each with formula, citations, assumptions
+- [x] Synthetic port priced correctly with no code change (NORDIC TERN; a second vessel, MORVEN,
+      then led to two general fixes, see README)
+- [x] No tariff data under `app/` (guard test green)
+- [x] `make test` passes offline; `make lint` passes
+- [x] Failed and partial calculations visible in the database and the API
+- [x] The compiled rulebook for a port is exportable and readable by a human
+- [x] README explains every design decision a reviewer might question, including why the LLM never
       calculates, why pgvector rather than a vector DB, why LangGraph here, and the reference-data
       discrepancies
-- [ ] No secrets in git history
+- [x] No secrets in git history
+
+Verified 2026-10-03: a clean clone started with `docker compose up --build` priced SUDESTADA at
+509,991.33 ZAR (no compile, no ingestion LLM calls; 11.7k tokens); `make eval` passes all three
+cases; `make test lint` passes.
 
 ---
 

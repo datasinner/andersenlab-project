@@ -71,9 +71,9 @@ docker compose up --build
 On start the API container:
 
 1. applies database migrations;
-2. ingests every PDF in `data/tariffs/` (the bundled TNPA Tariff Book 2024/25): parsing,
-   embeddings, and two LLM calls that read the document profile and its charge catalogue. Files
-   already ingested are skipped;
+2. ingests every PDF in `data/tariffs/` (the bundled TNPA Tariff Book 2024/25): parsing and
+   embeddings; the document profile and charge catalogue come from the matching rulebook file
+   (for a PDF without one, two LLM calls read them). Files already ingested are skipped;
 3. loads the rulebook files in `data/rulebooks/`: the reviewed, compiled Durban rulebook, so
    Durban calls are priced at once instead of after a 6-minute, 1.2M-token compile;
 4. serves the API behind Nginx on `http://localhost:8080` (Swagger UI at `/docs`, with the
@@ -85,8 +85,10 @@ curl -s -X POST localhost:8080/v1/calculations -H 'Content-Type: application/jso
   -d '{"query": "Bulk carrier SUDESTADA, 51,300 GT, LOA 229.2 m, calling at Durban from 15 to 22 Nov 2024, 3.39 days alongside loading 40,000 t of iron ore for export."}'
 ```
 
-A calculation with a compiled rulebook takes 10–20 s, most of it one round of fact-resolution
-calls. Other ports in the TNPA book have no rulebook yet: compile one first (see
+From a clean clone the stack is ready in about 15 seconds after the image is built. A calculation
+with a compiled rulebook takes 5–15 s and about 2–12k tokens (SUDESTADA: 11.5k), most of it one
+round of fact-resolution calls; an identical request again is answered from the response cache
+in 0.2 s with no tokens. Other ports in the TNPA book have no rulebook yet: compile one first (see
 [Compiling rules](#compiling-and-reviewing-rules)), because the first compile takes longer than a
 calculation may run. `docker compose down -v` removes everything, including the database.
 
@@ -104,7 +106,7 @@ uv run python scripts/rulebook.py import
 uv run uvicorn app.main:app --reload
 ```
 
-`make test` runs the 328 tests (unit and integration) against a throwaway `test` database on the
+`make test` runs the 336 tests (unit and integration) against a throwaway `test` database on the
 same Postgres server, with the LLM provider forced to a fake: no API key or network needed.
 `make lint` runs `ruff check` and `ruff format --check`.
 
