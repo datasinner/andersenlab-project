@@ -13,3 +13,7 @@ os.environ["LLM_COMPILE_MODEL"] = ""
 os.environ["APP_ENV"] = "test"
 os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 os.environ["API_AUTH_KEY"] = ""
+# Tests script every LLM answer; a bundled rulebook file must not stand in for them.
+os.environ["RULEBOOKS_DIR"] = ""
+# The compile tests script up to three review rounds (the default allows two).
+os.environ["AGENT_MAX_REVISIONS"] = "2"

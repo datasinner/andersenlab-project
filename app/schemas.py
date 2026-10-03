@@ -109,6 +109,7 @@ class CompiledRuleOut(BaseModel):
     research_notes: str
     model: str | None
     compiled_at: datetime | None
+    prompt_version: str | None  # older than the rulebook's when reused after a prompt change
     error: str | None
     rule: dict[str, Any] | None
 

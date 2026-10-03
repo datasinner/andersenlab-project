@@ -82,6 +82,7 @@ def _rule_out(outcome: CompileOutcome) -> CompiledRuleOut:
         research_notes=outcome.research_notes,
         model=outcome.model,
         compiled_at=outcome.compiled_at,
+        prompt_version=outcome.prompt_version,
         error=outcome.error,
         rule=outcome.rule.model_dump(mode="json") if outcome.rule else None,
     )

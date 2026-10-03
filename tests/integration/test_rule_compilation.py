@@ -280,6 +280,17 @@ async def test_tools_report_bad_requests_as_text(ingested_tnpa):
     assert tools.seen  # every excerpt shown is remembered for the evidence
 
 
+async def test_an_excerpt_is_shown_in_full_once_then_referenced(ingested_tnpa):
+    search = TariffSearch(async_session_factory, FakeEmbedder())
+    tools = ToolExecutor(async_session_factory, search, ingested_tnpa.document_id)
+
+    first = await tools.execute("ReadSection", {"ref": "3.6"})
+    again = await tools.execute("ReadSection", {"ref": "3.6"})
+    assert "(shown above)" not in first
+    assert "(shown above)" in again and len(again) < len(first) / 3
+    assert first.count("<tariff_excerpt") == again.count("<tariff_excerpt")
+
+
 # -- the rulebook ---------------------------------------------------------------------------
 
 

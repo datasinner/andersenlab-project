@@ -4,7 +4,9 @@ Each tool is a Pydantic model: its docstring and fields are the tool
 description the model sees, and the model's arguments are validated against
 it. Every excerpt a tool shows is remembered by chunk id, so the evidence the
 agent submits can be resolved back to exact text for extraction and
-grounding.
+grounding. An excerpt already shown in the conversation is shown again only
+as a reference to it: the whole conversation is resent on every turn, so a
+repeated table would be paid for on every later turn.
 """
 
 import uuid
@@ -14,7 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.agent.state import Excerpt, render_excerpts
+from app.agent.state import Excerpt
 from app.models import Chunk, DocumentSection
 from app.retrieval.context import find_definitions, outline
 from app.retrieval.search import TariffSearch
@@ -78,6 +80,7 @@ class ToolExecutor:
         self.document_id = document_id
         self.seen: dict[int, Excerpt] = {}
         self.sections_read: list[str] = []
+        self._shown: set[int] = set()
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
         """Run a tool call and return its result as text for the model.
@@ -102,7 +105,7 @@ class ToolExecutor:
             self._remember(hit.chunk_id, hit.section_ref, hit.page, hit.printed_page, hit.content)
             for hit in hits
         ]
-        return f"Results for {query!r}:\n\n{render_excerpts(excerpts)}"
+        return f"Results for {query!r}:\n\n{self._show(excerpts)}"
 
     async def read_section(self, ref: str) -> str:
         async with self._sessions() as session:
@@ -133,7 +136,7 @@ class ToolExecutor:
         ]
         pages = f"pages {section.page_start}-{section.page_end}"
         lines = [f"Section {section.ref}: {section.title} ({pages})"]
-        lines.append(render_excerpts(excerpts) if excerpts else "(no text of its own)")
+        lines.append(self._show(excerpts) if excerpts else "(no text of its own)")
         if children:
             lines.append("Subsections: " + "; ".join(f"{c.ref} {c.title}" for c in children))
         return "\n\n".join(lines)
@@ -150,7 +153,7 @@ class ToolExecutor:
             )
             for chunk in chunks
         ]
-        return render_excerpts(excerpts)
+        return self._show(excerpts)
 
     async def list_sections(self, prefix: str | None) -> str:
         async with self._sessions() as session:
@@ -159,6 +162,16 @@ class ToolExecutor:
         if len(sections) > _MAX_OUTLINE_LINES:
             lines.append(f"... {len(sections) - _MAX_OUTLINE_LINES} more; narrow with a prefix")
         return "\n".join(lines) or "No sections match."
+
+    def _show(self, excerpts: list[Excerpt]) -> str:
+        rendered = []
+        for excerpt in excerpts:
+            if excerpt.chunk_id in self._shown:
+                rendered.append(excerpt.render_reference())
+            else:
+                rendered.append(excerpt.render())
+                self._shown.add(excerpt.chunk_id)
+        return "\n\n".join(rendered) or "(none)"
 
     def _remember(
         self, chunk_id: int, section_ref: str, page: int, printed_page: str | None, text: str

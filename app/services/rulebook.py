@@ -3,9 +3,13 @@
 compile_port resolves the port against the document, picks the charges to
 compile (by default those a vessel pays on an ordinary call: payer vessel,
 triggered per call, per service or per period), and compiles them
-concurrently. A cached rule is reused unless refresh is asked for; the cache
-key includes the rule schema version and the prompt versions, so changing
-either recompiles.
+concurrently. A cached rule is reused unless refresh is asked for. The cache
+key includes the rule schema version and the prompt versions. A schema
+change always recompiles; after a prompt change, rules compiled with older
+prompts stay in use (RULES_REUSE_OLDER_PROMPTS, on by default) until they are
+recompiled with refresh, because recompiling a port costs minutes and about
+a million tokens. A failed compilation is only reused under the current
+prompts, so a prompt fix gets its chance.
 
 Every outcome is cached: approved rules, rules the critic still had issues
 with after the last revision (flagged low_confidence, with the issues kept),
@@ -17,6 +21,7 @@ they say nothing about the charge.
 import asyncio
 import time
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -68,6 +73,7 @@ class CompileOutcome:
     compiled_at: datetime | None = None
     error: str | None = None
     section_refs: list[str] = field(default_factory=list)  # the charge's own sections
+    prompt_version: str | None = None  # the prompts the rule was compiled with
 
 
 @dataclass(frozen=True)
@@ -191,6 +197,7 @@ class RulebookService:
             latency_ms=int((time.monotonic() - started) * 1000),
             model=self._llm.model_name,
             section_refs=charge.section_refs,
+            prompt_version=prompt_version(),
         )
         log.info(
             "rule_compiled",
@@ -207,13 +214,15 @@ class RulebookService:
         self, document_id: uuid.UUID, port_key: str, charge_id: str
     ) -> CompiledRule | None:
         async with self._sessions() as session:
-            return await session.scalar(
-                _current_rules(document_id, port_key).where(CompiledRule.charge_id == charge_id)
+            rows = await session.scalars(
+                _cached_rows(document_id, port_key).where(CompiledRule.charge_id == charge_id)
             )
+            usable = effective_rules(rows)
+            return usable[0] if usable else None
 
     async def cached_rules(self, document_id: uuid.UUID, port_key: str) -> list[CompiledRule]:
         async with self._sessions() as session:
-            return list(await session.scalars(_current_rules(document_id, port_key)))
+            return effective_rules(await session.scalars(_cached_rows(document_id, port_key)))
 
     async def _select_charges(
         self, document_id: uuid.UUID, charge_ids: list[str] | None, include_all: bool
@@ -271,17 +280,38 @@ class RulebookService:
             await session.commit()
 
 
-def _current_rules(document_id: uuid.UUID, port_key: str):
+def _cached_rows(document_id: uuid.UUID, port_key: str):
     return (
         select(CompiledRule)
         .where(
             CompiledRule.document_id == document_id,
             CompiledRule.port_key == port_key,
             CompiledRule.rule_schema_version == RULE_SCHEMA_VERSION,
-            CompiledRule.prompt_version == prompt_version(),
         )
         .order_by(CompiledRule.id)
     )
+
+
+def effective_rules(rows: Iterable[CompiledRule]) -> list[CompiledRule]:
+    """The cached rule in use for each charge (rows of one document and port,
+    current schema), in order of preference: a rule compiled with the current
+    prompts; if allowed, the newest rule compiled with older prompts; a failed
+    compilation under the current prompts."""
+    current = prompt_version()
+
+    def preference(row: CompiledRule) -> int:
+        if row.rule is not None and row.prompt_version == current:
+            return 3
+        if row.rule is not None and settings.rules_reuse_older_prompts:
+            return 2
+        return 1 if row.prompt_version == current else 0
+
+    chosen: dict[str, CompiledRule] = {}
+    for row in sorted(rows, key=lambda row: row.id):  # on a tie the newer row wins
+        rank = preference(row)
+        if rank and (row.charge_id not in chosen or rank >= preference(chosen[row.charge_id])):
+            chosen[row.charge_id] = row
+    return sorted(chosen.values(), key=lambda row: row.id)
 
 
 def outcome_from_cache(
@@ -303,6 +333,7 @@ def outcome_from_cache(
         model=row.model,
         compiled_at=row.created_at,
         section_refs=section_refs or (rule.section_refs if rule else []),
+        prompt_version=row.prompt_version,
     )
 
 

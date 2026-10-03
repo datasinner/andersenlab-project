@@ -13,8 +13,10 @@ import asyncio
 import sys
 from pathlib import Path
 
+from app.config import settings
 from app.db import async_session_factory, engine
 from app.ingestion.pipeline import IngestionPipeline
+from app.llm.cache import with_response_cache
 from app.llm.client import build_llm_clients
 from app.llm.embeddings import build_embedder
 from app.llm.resilience import LLMConfigurationError, ResiliencePolicy
@@ -32,7 +34,12 @@ async def main(paths: list[Path], force: bool) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    pipeline = IngestionPipeline(async_session_factory, llm, embedder)
+    pipeline = IngestionPipeline(
+        async_session_factory,
+        with_response_cache(llm, async_session_factory),
+        embedder,
+        rulebooks_dir=settings.rulebooks_dir,
+    )
     failed = 0
     try:
         for path in paths:

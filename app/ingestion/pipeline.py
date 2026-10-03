@@ -2,7 +2,10 @@
 
 register (sha256, idempotent) → parse → clean → structure → chunk → store
 [parsing] → embed [indexing] → document profile + charge catalogue, two
-concurrent LLM calls [cataloguing] → ready.
+concurrent LLM calls [cataloguing] → ready. When a rulebook file exported
+from the same PDF is at hand (rulebooks_dir), its profile and catalogue are
+used instead of the two LLM calls: they are what its rules were compiled
+against, and they cost nothing.
 
 Each stage commits, so a document's status shows how far it got. Any
 failure marks the document failed with the error; ingesting the same bytes
@@ -39,6 +42,7 @@ from app.models import (
     DocumentStatus,
     TariffDocument,
 )
+from app.services.rulebook_files import apply_profile_and_catalogue, find_rulebook_file
 
 logger = structlog.get_logger("app.ingestion")
 
@@ -71,11 +75,13 @@ class IngestionPipeline:
         llm: LLMClient,
         embedder: Embedder,
         parser: PdfParser | None = None,
+        rulebooks_dir: str | None = None,
     ) -> None:
         self._sessions = session_factory
         self._llm = llm
         self._embedder = embedder
         self._parser = parser or PyMuPdfParser()
+        self._rulebooks_dir = rulebooks_dir
 
     async def ingest(self, content: bytes, filename: str, *, force: bool = False) -> IngestResult:
         """Register and process in one go (the CLI and container start)."""
@@ -115,11 +121,18 @@ class IngestionPipeline:
             await self._embed_chunks(document_id)
             await self._set_status(document_id, DocumentStatus.CATALOGUING)
 
-            (profile, _), (charges, _) = await asyncio.gather(
-                read_profile(self._llm, parsed, sections),
-                discover_charges(self._llm, sections),
-            )
-            await self._store_results(document_id, profile, charges)
+            known = find_rulebook_file(self._rulebooks_dir, hashlib.sha256(content).hexdigest())
+            if known is not None:
+                await self._store_known(document_id, known)
+                charge_count = len(known["catalogue"])
+                log.info("ingestion_catalogue_from_rulebook_file", charges=charge_count)
+            else:
+                (profile, _), (charges, _) = await asyncio.gather(
+                    read_profile(self._llm, parsed, sections),
+                    discover_charges(self._llm, sections),
+                )
+                await self._store_results(document_id, profile, charges)
+                charge_count = len(charges)
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"[:_MAX_ERROR_CHARS]
             log.exception("ingestion_failed")
@@ -134,7 +147,7 @@ class IngestionPipeline:
             sections=len(sections),
             chunks=len(chunks),
             tables=table_count(sections),
-            charges=len(charges),
+            charges=charge_count,
         )
 
     def _parse(self, content: bytes) -> ParsedDocument:
@@ -262,6 +275,14 @@ class IngestionPipeline:
             document.effective_from = profile.effective_from
             document.effective_to = profile.effective_to
             document.ports = [port.model_dump() for port in profile.ports]
+            document.status = DocumentStatus.READY
+            await session.commit()
+
+    async def _store_known(self, document_id: uuid.UUID, rulebook: dict) -> None:
+        async with self._sessions() as session:
+            document = await session.get(TariffDocument, document_id)
+            assert document is not None
+            await apply_profile_and_catalogue(session, document, rulebook)
             document.status = DocumentStatus.READY
             await session.commit()
 

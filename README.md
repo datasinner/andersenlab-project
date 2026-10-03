@@ -278,7 +278,10 @@ Set in `.env` (see `.env.example`); the main settings:
 | `LLM_MAX_RETRIES` | `2` | Retries on rate limits, 5xx and connection errors (not on an empty balance) |
 | `LLM_MAX_CONCURRENCY` | `8` | Concurrent model calls per process |
 | `AGENT_MAX_TOOL_CALLS` | `8` | Research tool calls per charge |
-| `AGENT_MAX_REVISIONS` | `2` | Extract/review rounds per charge |
+| `AGENT_MAX_REVISIONS` | `1` | Extra extract/review rounds per charge when the review finds blocking issues |
+| `AGENT_FACTS_PER_BATCH` | `40` | Facts per fact-resolution call: bigger batches cost fewer tokens, smaller ones answer sooner |
+| `RULES_REUSE_OLDER_PROMPTS` | `true` | After a prompt change, keep using cached rules compiled with older prompts until recompiled with `--refresh` |
+| `LLM_RESPONSE_CACHE` | `true` | Answer repeated query-parsing, fact-resolution and ingestion calls from the database |
 | `CALCULATION_TIMEOUT_SECONDS` | `300` | Whole calculation; Nginx allows 315 s |
 | `TARIFFS_DIR` | `./data/tariffs` | PDFs ingested on start |
 | `RULEBOOKS_DIR` | `./data/rulebooks` | Rulebook files loaded on start |
@@ -305,10 +308,19 @@ Set in `.env` (see `.env.example`); the main settings:
   revision. Rules that still have open issues are kept, priced and flagged, never silently
   dropped.
 - **Compile once, cache, export.** Rules are cached per document, port, rule schema version and
-  prompt version, so a calculation never silently recompiles and changes its answer; a prompt
-  change recompiles. Reviewed rulebooks are exported as files and loaded into fresh databases,
-  together with the catalogue they were compiled against. They are data produced from the
-  document, like the cache they fill.
+  prompt version, so a calculation never silently recompiles and changes its answer. After a
+  prompt change the older rules stay in use until you recompile them (`--refresh`, for one
+  charge or all), so improving a prompt doesn't silently cost a million tokens per port.
+  Reviewed rulebooks are exported as files and loaded into fresh databases, together with the
+  catalogue they were compiled against; ingestion reuses that catalogue instead of asking the
+  model again. They are data produced from the document, like the cache they fill.
+- **Token economy.** Compiling is the expensive part (each charge's research conversation is
+  resent on every turn, then extracted and reviewed), so it happens once and is reused: the rule
+  cache, rulebook files, one revision round by default, and excerpts the research agent has
+  already seen are not resent. At runtime, facts are resolved in a few large batches and the
+  model answers only the facts that differ from their defaults; identical calls are answered
+  from a response cache, so a repeated request costs nothing and gets the same answer. Call
+  logs record the prompt tokens OpenAI served from its prompt cache.
 - **Two models.** Compilation is offline and cached, so it can afford a stronger model
   (`LLM_COMPILE_MODEL`); runtime calls use a faster one.
 - **Facts are decided, with sources.** What a rule needs to know about the call (is the vessel at

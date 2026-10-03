@@ -4,9 +4,11 @@ The facts of all compiled rules for the call are decided by structured LLM
 calls over batches of rules, run concurrently. (Low reasoning effort was
 tried; it misread compound descriptions such as "self-propelled vessels
 ... at their registered port", so these calls keep the default.) The model
-sees the vessel call and each fact's description in the tariff's words. If a
-batch fails, its facts keep their rule defaults and a warning says so;
-pricing still happens.
+sees the vessel call and each fact's description in the tariff's words, and
+answers only the facts that differ from their defaults (most facts of an
+ordinary call take their defaults, so this keeps answers short); the rest are
+filled in with their defaults here. If a batch fails, its facts keep their
+rule defaults and a warning says so; pricing still happens.
 """
 
 import asyncio
@@ -47,11 +49,12 @@ class ResolvedFact:
     reason: str
 
 
-# Facts per resolution call. Latency is dominated by the answer's length, and
-# the calls run concurrently, so small batches answer much faster than one
-# long call. A rule's facts stay together (one rule with more facts gets a
+# Facts per resolution call (AGENT_FACTS_PER_BATCH). Every call repeats the
+# instructions and the call description (about 1.3k tokens), so bigger batches
+# cost fewer tokens; smaller ones answer sooner, since batches run
+# concurrently. A rule's facts stay together (one rule with more facts gets a
 # batch of its own).
-FACTS_PER_BATCH = 12
+FACTS_PER_BATCH = 40
 
 
 async def resolve_facts(
@@ -62,6 +65,7 @@ async def resolve_facts(
     quantities: ResolvedQuantities,
     rules: dict[str, ChargeRule],
     overrides: dict[str, str],
+    facts_per_batch: int = FACTS_PER_BATCH,
 ) -> dict:
     """{"facts": [ResolvedFact], "warnings": [...], "steps": [...]}"""
     resolved = [
@@ -83,7 +87,7 @@ async def resolve_facts(
     batches: list[dict[str, tuple[ChargeRule, list[FactSpec]]]] = [{}]
     size = 0
     for charge_id, specs in pending.items():
-        if batches[-1] and size + len(specs) > FACTS_PER_BATCH:
+        if batches[-1] and size + len(specs) > facts_per_batch:
             batches.append({})
             size = 0
         batches[-1][charge_id] = (rules[charge_id], specs)
@@ -136,6 +140,13 @@ async def _resolve_batch(
         for d in result.value.facts
         if (d.charge_id, d.fact) in known
     ]
+    answered = {(fact.charge_id, fact.fact) for fact in facts}
+    facts += [
+        ResolvedFact(charge_id, spec.name, _text(spec.default_value), "default", "")
+        for charge_id, (_, specs) in batch.items()
+        for spec in specs
+        if (charge_id, spec.name) not in answered and spec.default_value is not None
+    ]
     step = AgentStep(
         node="resolve_facts",
         input_summary=f"{len(known)} fact(s) for {', '.join(batch)}",
@@ -151,6 +162,12 @@ async def _resolve_batch(
         completion_tokens=result.usage.completion_tokens,
     )
     return facts, step
+
+
+def _text(value: bool | str) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return value
 
 
 def fact_usages(rule: ChargeRule, fact: str) -> list[str]:

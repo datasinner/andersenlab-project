@@ -41,7 +41,8 @@ async def export(port: str, out: Path | None) -> int:
     if not rules:
         print(f"error: no compiled rules for {document.source_filename}", file=sys.stderr)
         return 2
-    path = out or Path(settings.rulebooks_dir) / f"{Path(document.source_filename).stem}.json"
+    directory = Path(settings.rulebooks_dir or "data/rulebooks")
+    path = out or directory / f"{Path(document.source_filename).stem}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n")
     ports = ", ".join(f"{port} ({len(entries)})" for port, entries in data["ports"].items())
@@ -71,10 +72,13 @@ async def main(args: argparse.Namespace) -> int:
     try:
         if args.command == "export":
             return await export(args.port, args.out)
+        directory = args.dir or settings.rulebooks_dir
         if args.file:
             paths = [args.file]
+        elif directory:
+            paths = sorted(Path(directory).glob("*.json"))
         else:
-            paths = sorted(Path(args.dir or settings.rulebooks_dir).glob("*.json"))
+            paths = []
         if not paths:
             print("no rulebook files found")
             return 0

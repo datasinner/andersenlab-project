@@ -33,10 +33,18 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = Field(default=120, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)
     llm_max_concurrency: int = Field(default=8, gt=0)
+    # Answer repeated runtime and ingestion calls from the database (app/llm/cache.py).
+    llm_response_cache: bool = True
 
     agent_max_tool_calls: int = Field(default=8, gt=0)
-    agent_max_revisions: int = Field(default=2, ge=0)
+    agent_max_revisions: int = Field(default=1, ge=0)
     agent_critic_on_cache_hit: bool = False
+    # Facts per fact-resolution call: bigger batches cost fewer tokens, smaller answer sooner.
+    agent_facts_per_batch: int = Field(default=40, gt=0)
+    # A prompt change normally means recompiling every cached rule (minutes and
+    # about a million tokens per port). When true, rules compiled with older
+    # prompts (same rule schema) stay in use until recompiled with refresh.
+    rules_reuse_older_prompts: bool = True
     calculation_timeout_seconds: int = Field(default=300, gt=0)
 
     retrieval_top_k: int = Field(default=8, gt=0)
@@ -45,7 +53,7 @@ class Settings(BaseSettings):
     parser_vision_fallback: bool = False
     tariffs_dir: str = "./data/tariffs"
     # Exported rulebooks loaded at startup, so a fresh database needn't recompile.
-    rulebooks_dir: str = "./data/rulebooks"
+    rulebooks_dir: str | None = "./data/rulebooks"
     # Example requests shown in Swagger; kept outside app/ (they name real ports).
     examples_dir: str = "./examples"
     max_upload_mb: int = Field(default=25, gt=0)

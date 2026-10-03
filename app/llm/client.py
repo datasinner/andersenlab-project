@@ -55,11 +55,14 @@ class LLMOutputError(LLMError):
 class Usage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    # Prompt tokens OpenAI served from its prompt cache (billed at a discount).
+    cached_tokens: int = 0
 
     def __add__(self, other: "Usage") -> "Usage":
         return Usage(
             self.prompt_tokens + other.prompt_tokens,
             self.completion_tokens + other.completion_tokens,
+            self.cached_tokens + other.cached_tokens,
         )
 
 
@@ -218,6 +221,7 @@ class OpenAIClient:
             model=self.model_name,
             latency_ms=latency_ms,
             prompt_tokens=usage.prompt_tokens,
+            cached_tokens=usage.cached_tokens,
             completion_tokens=usage.completion_tokens,
         )
 
@@ -253,7 +257,12 @@ def _truncated(response: BaseMessage) -> bool:
 
 def _usage(response: BaseMessage) -> Usage:
     metadata = getattr(response, "usage_metadata", None) or {}
-    return Usage(metadata.get("input_tokens", 0), metadata.get("output_tokens", 0))
+    details = metadata.get("input_token_details") or {}
+    return Usage(
+        metadata.get("input_tokens", 0),
+        metadata.get("output_tokens", 0),
+        details.get("cache_read") or 0,
+    )
 
 
 # A scripted response: a model instance or dict (structured calls), an

@@ -908,6 +908,7 @@
   "Durban": [
    {
     "charge_id": "berth_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -1256,6 +1257,7 @@
    },
    {
     "charge_id": "berthing_services",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -1433,6 +1435,7 @@
    },
    {
     "charge_id": "crew_transportation",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -1525,6 +1528,7 @@
    },
    {
     "charge_id": "docking_undocking_dry_dock",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -1623,6 +1627,7 @@
    },
    {
     "charge_id": "docking_undocking_syncrolift",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -1676,6 +1681,7 @@
    },
    {
     "charge_id": "drydock_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [
@@ -1881,6 +1887,7 @@
    },
    {
     "charge_id": "hulk_port_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -1974,6 +1981,7 @@
    },
    {
     "charge_id": "life_saving_appliance_survey_examination",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -2085,6 +2093,7 @@
    },
    {
     "charge_id": "light_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -2393,6 +2402,7 @@
    },
    {
     "charge_id": "minimum_repair_facility_fees",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [
@@ -2521,6 +2531,7 @@
    },
    {
     "charge_id": "passenger_baggage",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -2604,6 +2615,7 @@
    },
    {
     "charge_id": "passengers_levy",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -2695,6 +2707,7 @@
    },
    {
     "charge_id": "pilotage_services",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -2943,6 +2956,7 @@
    },
    {
     "charge_id": "pleasure_vessel_port_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [
@@ -3066,6 +3080,7 @@
    },
    {
     "charge_id": "port_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [
@@ -3615,6 +3630,7 @@
    },
    {
     "charge_id": "running_of_vessel_lines",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -3734,6 +3750,7 @@
    },
    {
     "charge_id": "samsa_levy",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [
@@ -3807,6 +3824,7 @@
    },
    {
     "charge_id": "slipway_docking_undocking",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -3868,6 +3886,7 @@
    },
    {
     "charge_id": "small_vessel_port_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -4095,6 +4114,7 @@
    },
    {
     "charge_id": "small_vessel_survey_examination",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -4186,6 +4206,7 @@
    },
    {
     "charge_id": "syncrolift_dues",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],
@@ -4248,6 +4269,7 @@
    },
    {
     "charge_id": "tug_vessel_assistance_attendance",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [
@@ -4611,6 +4633,7 @@
    },
    {
     "charge_id": "vts_charges",
+    "prompt_version": "critique@7+extract_rule@7+research@1",
     "model": "gpt-5.6-sol",
     "critic_verdict": {
      "issues": [],

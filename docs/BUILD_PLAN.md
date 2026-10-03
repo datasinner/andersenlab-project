@@ -223,8 +223,11 @@ All settings live in one `Settings` class in `app/config.py`. Every value appear
 | `LLM_MAX_RETRIES` | `2` | retries on 429/5xx only |
 | `LLM_MAX_CONCURRENCY` | `8` | semaphore size **per worker process** |
 | `AGENT_MAX_TOOL_CALLS` | `8` | per-charge research loop budget |
-| `AGENT_MAX_REVISIONS` | `2` | validate/critique → re-extract loops per charge |
+| `AGENT_MAX_REVISIONS` | `1` | validate/critique → re-extract loops per charge |
 | `AGENT_CRITIC_ON_CACHE_HIT` | `false` | re-run the critic when a cached rule is reused |
+| `AGENT_FACTS_PER_BATCH` | `40` | facts per `resolve_facts` call (fewer, larger calls cost fewer tokens) |
+| `RULES_REUSE_OLDER_PROMPTS` | `true` | keep cached rules from older prompts until recompiled with `refresh` |
+| `LLM_RESPONSE_CACHE` | `true` | answer repeated runtime and ingestion calls from `llm_response` |
 | `CALCULATION_TIMEOUT_SECONDS` | `300` | budget for one whole calculation (cold cache) |
 | `RETRIEVAL_TOP_K` | `8` | chunks returned per search |
 | `RETRIEVAL_RRF_K` | `60` | reciprocal rank fusion constant |
@@ -391,8 +394,16 @@ Unique `(document_id, port_key, charge_id, rule_schema_version, prompt_version)`
 is written: approved rules; rules the critic still had blocking issues with after the last revision
 (outcome `low_confidence`, the version with the fewest issues, issues kept); and failures (`rule`
 null: no extraction passed validation). So a calculation never silently recompiles and changes its
-answer; `refresh` retries. Provider errors are not cached. Bumping a prompt or schema version
-invalidates the cache without a migration.
+answer; `refresh` retries. Provider errors are not cached. Bumping the schema version
+invalidates the cache without a migration. After a prompt change the cached rules compiled with
+older prompts stay in use (`RULES_REUSE_OLDER_PROMPTS`, default on; preference: current-prompt
+rule, then the newest older-prompt rule, then a current-prompt failure) until recompiled with
+`refresh`, so improving a prompt never silently costs a full recompile of every port.
+
+`llm_response`: a stored answer per structured call, keyed by a hash of model, call name, output
+schema, effort and messages, for the runtime and ingestion calls (`parse_query`, `resolve_facts`,
+`document_profile`, `charge_catalogue`). A repeated identical call costs no tokens and gets the
+same answer (`LLM_RESPONSE_CACHE`).
 
 ### `calculation`
 `id uuid PK`, `request_id`, `document_id FK`, `port_key`, `vessel_call jsonb`, `query_text`,
@@ -608,8 +619,8 @@ calculation, failed or not, is stored (`GET /v1/calculations/{id}` returns it wi
    extract + critique) ≈ 50–70 calls, roughly 1–3 minutes. A warm port with JSON input makes one
    `resolve_facts` call per charge (batched into one call when possible) and takes seconds. Use
    `scripts/compile_rules.py` or `POST /v1/rules/compile` to warm the cache ahead of time.
-7. Determinism: temperature 0, cached rules and versioned prompts. Two calls for the same vessel
-   on a warm cache must return identical amounts.
+7. Determinism: temperature 0, cached rules, versioned prompts and the response cache. Two calls
+   for the same vessel on a warm cache must return identical amounts.
 8. Uploaded PDFs are untrusted input: size limit, MIME check, PyMuPDF only (nothing is executed),
    and prompt-injection framing (§10).
 

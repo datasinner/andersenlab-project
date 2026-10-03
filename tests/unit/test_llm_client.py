@@ -82,6 +82,23 @@ async def test_structured_call_sends_a_strict_schema_and_validates_the_answer():
     assert response_format["json_schema"]["schema"]["required"] == ["name", "amount"]
 
 
+async def test_prompt_tokens_served_from_the_cache_are_counted():
+    usage = {
+        "input_tokens": 1200,
+        "output_tokens": 30,
+        "total_tokens": 1230,
+        "input_token_details": {"cache_read": 1024},
+    }
+    answer = AIMessage(
+        content=json.dumps({"name": "Pilotage", "amount": "1"}), usage_metadata=usage
+    )
+    client, _ = _client(answer)
+
+    result = await client.generate_structured(Fee, MESSAGES, name="extract")
+
+    assert result.usage == Usage(prompt_tokens=1200, completion_tokens=30, cached_tokens=1024)
+
+
 async def test_answer_failing_validation_carries_the_errors():
     client, _ = _client(_answer(json.dumps({"name": "Pilotage", "amount": ""})))
     with pytest.raises(LLMOutputError, match="does not match Fee") as caught:

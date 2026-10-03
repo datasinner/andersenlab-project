@@ -3,7 +3,7 @@ presented to the resolver, and fact batching."""
 
 from decimal import Decimal
 
-from app.agent.nodes.facts import FACTS_PER_BATCH, fact_usages, resolve_facts
+from app.agent.nodes.facts import fact_usages, resolve_facts
 from app.agent.nodes.validate import repair_citations
 from app.agent.state import Excerpt
 from app.domain.vessel import Basis, VesselCall, resolve_quantities
@@ -143,10 +143,10 @@ async def test_facts_are_resolved_in_concurrent_batches_with_overrides_winning()
         quantities=quantities,
         rules=rules,
         overrides={"f0_0": "false"},
+        facts_per_batch=12,
     )
 
-    # 19 facts to decide, at most FACTS_PER_BATCH per call, rules kept whole.
-    assert FACTS_PER_BATCH == 12
+    # 19 facts to decide, at most 12 per call, rules kept whole.
     assert len(llm.calls) == 2
     facts = {(fact.charge_id, fact.fact): (fact.value, fact.source) for fact in result["facts"]}
     assert facts[("charge_0", "f0_0")] == ("false", "override")
@@ -168,6 +168,41 @@ async def test_a_failed_batch_keeps_defaults_and_warns():
     assert result["warnings"] == [
         "Facts for charge_0 could not be resolved (down); they took their rule defaults."
     ]
+
+
+async def test_facts_left_out_of_the_answer_take_their_defaults():
+    rules = {
+        "charge_0": make_rule(
+            facts=[flag("ordinary"), flag("unusual", default=True), flag("must_decide", None)]
+        )
+    }
+    llm = FakeLLMClient()
+    llm.script(
+        "resolve_facts",
+        {
+            "facts": [
+                {
+                    "charge_id": "charge_0",
+                    "fact": "must_decide",
+                    "value": "true",
+                    "source": "vessel_data",
+                    "reason": "stated",
+                }
+            ]
+        },
+    )
+    vessel_call, quantities = _call()
+
+    result = await resolve_facts(
+        llm=llm, port="P", vessel_call=vessel_call, quantities=quantities, rules=rules, overrides={}
+    )
+
+    facts = {fact.fact: (fact.value, fact.source) for fact in result["facts"]}
+    assert facts == {
+        "must_decide": ("true", "vessel_data"),
+        "ordinary": ("false", "default"),
+        "unusual": ("true", "default"),
+    }
 
 
 def test_passengers_default_to_none_with_an_assumption():

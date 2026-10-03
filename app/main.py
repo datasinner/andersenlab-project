@@ -12,6 +12,7 @@ from app.config import settings
 from app.db import async_session_factory, engine
 from app.errors import AppError
 from app.ingestion.pipeline import IngestionPipeline
+from app.llm.cache import with_response_cache
 from app.llm.client import build_llm_clients
 from app.llm.embeddings import build_embedder
 from app.llm.resilience import ResiliencePolicy
@@ -34,7 +35,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # semaphore. A missing API key fails here, at startup, not mid-request.
     policy = ResiliencePolicy.from_settings()
     app.state.observability = build_observability()
-    app.state.llm_client, app.state.compile_llm_client = build_llm_clients(policy)
+    llm_client, compile_llm_client = build_llm_clients(policy)
+    app.state.llm_client = with_response_cache(llm_client, async_session_factory)
+    app.state.compile_llm_client = with_response_cache(compile_llm_client, async_session_factory)
     app.state.embedder = build_embedder(policy)
     app.state.rulebook = RulebookService(
         async_session_factory,
@@ -46,7 +49,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         async_session_factory, app.state.llm_client, app.state.rulebook, app.state.observability
     )
     app.state.ingestion = IngestionPipeline(
-        async_session_factory, app.state.compile_llm_client, app.state.embedder
+        async_session_factory,
+        app.state.compile_llm_client,
+        app.state.embedder,
+        rulebooks_dir=settings.rulebooks_dir,
     )
     logger.info(
         "startup_complete",

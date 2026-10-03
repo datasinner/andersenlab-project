@@ -214,8 +214,9 @@ class ChargeCatalogueEntry(Base):
 class CompiledRule(Base):
     """The outcome of compiling one charge at one port: the ChargeRule (which
     passed validation; approved or low_confidence), or no rule when no
-    extraction passed validation. Bumping the rule schema or a prompt
-    version makes old rows unreachable without a migration."""
+    extraction passed validation. Bumping the rule schema makes old rows
+    unreachable without a migration; after a prompt change, old rows stay in
+    use until recompiled (see app.services.rulebook)."""
 
     __tablename__ = "compiled_rule"
     __table_args__ = (
@@ -244,6 +245,21 @@ class CompiledRule(Base):
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     critic_verdict: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class LLMResponse(Base):
+    """A stored answer to a structured model call, keyed by everything that
+    determines it (model, call name, output schema, messages). An identical
+    call is answered from here, so a repeated request costs no tokens and
+    gets the same answer. Only the calls in app.llm.cache.CACHED_CALLS."""
+
+    __tablename__ = "llm_response"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    response: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = _created_at()
 
 

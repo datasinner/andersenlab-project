@@ -8,35 +8,40 @@ its rules were compiled against and the rules themselves:
 - the document profile (ports, currency, VAT, effective dates) and the charge
   catalogue, which come from LLM calls at ingestion and could come out
   differently in another database;
-- the compiled rules for the current rule schema and compile prompts, per
-  port, with the critic's verdict;
+- the compiled rules in use for the current rule schema, per port, each with
+  the prompt version it was compiled with and the critic's verdict;
 - the position in the document of every chunk a rule cites (chunk ids are
   database ids).
 
 import_rulebook loads a file into a database where the same PDF (same
 checksum) is ingested: it adopts the profile and catalogue, points each
 citation at the chunk that holds its quote here, and caches the rules. A
-file is skipped when its document isn't ingested, when it was compiled with
-other prompts or another rule schema (its rules would never be used), or
-when the document already has compiled rules here. A rule whose quotes can't
-be found is left out and compiles on demand.
+file is skipped when its document isn't ingested, when it was compiled for
+another rule schema, or with older prompts while RULES_REUSE_OLDER_PROMPTS is
+off (its rules would never be used), or when the document already has
+compiled rules here. A rule whose quotes can't be found is left out and
+compiles on demand. Ingestion also uses a file's profile and catalogue
+instead of asking the model again (find_rulebook_file).
 
 The file is data produced from the document, like the cache it fills; it
 adds no tariff knowledge to the code.
 """
 
 import copy
+import json
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.config import settings
 from app.models import (
     ChargeCatalogueEntry,
     Chunk,
@@ -47,7 +52,7 @@ from app.models import (
 )
 from app.rules.dsl import RULE_SCHEMA_VERSION, ChargeRule
 from app.rules.grounding import quote_in
-from app.services.rulebook import prompt_version
+from app.services.rulebook import effective_rules, prompt_version
 
 FORMAT_VERSION = 1
 
@@ -62,17 +67,22 @@ class ImportResult:
 
 
 async def export_rulebook(session: AsyncSession, document: TariffDocument) -> dict[str, Any]:
-    """The document's profile, catalogue and current compiled rules (all ports)."""
-    rows = list(
+    """The document's profile, catalogue and the compiled rules in use (all ports)."""
+    cached = list(
         await session.scalars(
-            select(CompiledRule)
-            .where(
+            select(CompiledRule).where(
                 CompiledRule.document_id == document.id,
                 CompiledRule.rule_schema_version == RULE_SCHEMA_VERSION,
-                CompiledRule.prompt_version == prompt_version(),
             )
-            .order_by(CompiledRule.port_key, CompiledRule.charge_id)
         )
+    )
+    rows = sorted(
+        (
+            row
+            for port_key in {row.port_key for row in cached}
+            for row in effective_rules(row for row in cached if row.port_key == port_key)
+        ),
+        key=lambda row: (row.port_key, row.charge_id),
     )
     catalogue = await session.scalars(
         select(ChargeCatalogueEntry)
@@ -89,6 +99,7 @@ async def export_rulebook(session: AsyncSession, document: TariffDocument) -> di
         ports.setdefault(row.port_key, []).append(
             {
                 "charge_id": row.charge_id,
+                "prompt_version": row.prompt_version,
                 "model": row.model,
                 "critic_verdict": row.critic_verdict,
                 "rule": row.rule,
@@ -130,16 +141,21 @@ async def import_rulebook(
 ) -> ImportResult:
     if data.get("format_version") != FORMAT_VERSION:
         return ImportResult(False, f"unknown format {data.get('format_version')!r}")
-    if (
-        data.get("rule_schema_version") != RULE_SCHEMA_VERSION
-        or data.get("prompt_version") != prompt_version()
-    ):
+    if data.get("rule_schema_version") != RULE_SCHEMA_VERSION:
         return ImportResult(
             False,
-            "compiled with other prompts or rule schema "
-            f"({data.get('prompt_version')}, schema {data.get('rule_schema_version')}; this "
-            f"version uses {prompt_version()}, schema {RULE_SCHEMA_VERSION}); recompile and "
-            "export it again",
+            f"compiled for rule schema {data.get('rule_schema_version')}; this version uses "
+            f"{RULE_SCHEMA_VERSION}. Recompile and export it again",
+        )
+    versions = {
+        _entry_prompts(data, entry) for entries in data["ports"].values() for entry in entries
+    }
+    if not settings.rules_reuse_older_prompts and versions - {prompt_version()}:
+        return ImportResult(
+            False,
+            f"compiled with other prompts ({', '.join(sorted(versions))}; this version uses "
+            f"{prompt_version()}) and RULES_REUSE_OLDER_PROMPTS is off. Recompile and export "
+            "it again",
         )
 
     async with session_factory() as session:
@@ -154,7 +170,6 @@ async def import_rulebook(
             .where(
                 CompiledRule.document_id == document.id,
                 CompiledRule.rule_schema_version == RULE_SCHEMA_VERSION,
-                CompiledRule.prompt_version == prompt_version(),
             )
             .limit(1)
         )
@@ -178,30 +193,57 @@ async def import_rulebook(
                         charge_id=entry["charge_id"],
                         rule=rule,
                         rule_schema_version=RULE_SCHEMA_VERSION,
-                        prompt_version=prompt_version(),
+                        prompt_version=_entry_prompts(data, entry),
                         model=entry["model"],
                         critic_verdict=entry["critic_verdict"],
                     )
                 )
 
-        await session.execute(
-            delete(ChargeCatalogueEntry).where(ChargeCatalogueEntry.document_id == document.id)
-        )
-        session.add_all(
-            ChargeCatalogueEntry(document_id=document.id, **entry) for entry in data["catalogue"]
-        )
-        document.title = source["title"]
-        document.authority = source["authority"]
-        document.currency = source["currency"]
-        document.vat_rate = Decimal(source["vat_rate"]) if source["vat_rate"] else None
-        document.effective_from = _date(source["effective_from"])
-        document.effective_to = _date(source["effective_to"])
-        document.ports = source["ports"]
+        await apply_profile_and_catalogue(session, document, data)
         session.add_all(rows)
         await session.commit()
         return ImportResult(
             True, f"{len(rows)} rule(s) loaded", document.id, rules=len(rows), left_out=left_out
         )
+
+
+def find_rulebook_file(directory: str | Path | None, checksum: str) -> dict[str, Any] | None:
+    """The rulebook file in `directory` exported from the PDF with this checksum."""
+    if not directory:
+        return None
+    for path in sorted(Path(directory).glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("document", {}).get("checksum") == checksum:
+            return data
+    return None
+
+
+async def apply_profile_and_catalogue(
+    session: AsyncSession, document: TariffDocument, data: dict[str, Any]
+) -> None:
+    """Give the document the profile and charge catalogue from a rulebook
+    file (not committed)."""
+    source = data["document"]
+    await session.execute(
+        delete(ChargeCatalogueEntry).where(ChargeCatalogueEntry.document_id == document.id)
+    )
+    session.add_all(
+        ChargeCatalogueEntry(document_id=document.id, **entry) for entry in data["catalogue"]
+    )
+    document.title = source["title"]
+    document.authority = source["authority"]
+    document.currency = source["currency"]
+    document.vat_rate = Decimal(source["vat_rate"]) if source["vat_rate"] else None
+    document.effective_from = _date(source["effective_from"])
+    document.effective_to = _date(source["effective_to"])
+    document.ports = source["ports"]
+
+
+def _entry_prompts(data: dict[str, Any], entry: dict[str, Any]) -> str:
+    return entry.get("prompt_version") or data["prompt_version"]
 
 
 @dataclass(frozen=True)

@@ -27,6 +27,13 @@ class Excerpt:
             f'page="{self.page}"{printed}>\n{self.text}\n</tariff_excerpt>'
         )
 
+    def render_reference(self) -> str:
+        """A pointer to an excerpt already shown in the conversation."""
+        return (
+            f'<tariff_excerpt chunk_id="{self.chunk_id}" section="{self.section_ref}" '
+            f'page="{self.page}">(shown above)</tariff_excerpt>'
+        )
+
 
 def render_excerpts(excerpts: list[Excerpt]) -> str:
     return "\n\n".join(excerpt.render() for excerpt in excerpts) or "(none)"

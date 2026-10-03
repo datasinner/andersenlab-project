@@ -22,6 +22,7 @@ from app.agent.nodes.facts import ResolvedFact, resolve_facts
 from app.agent.nodes.normalize import normalize_input
 from app.agent.nodes.screen import ScreenedCharge, screen_charges
 from app.agent.state import AgentStep, ChargeSpec
+from app.config import settings
 from app.domain.vessel import ResolvedQuantities, VesselCall
 from app.llm.client import LLMClient
 from app.models import ChargeCatalogueEntry, TariffDocument
@@ -155,6 +156,7 @@ def build_calculation_graph(
             quantities=state["quantities"],
             rules=rules,
             overrides=state["request"].fact_overrides,
+            facts_per_batch=settings.agent_facts_per_batch,
         )
 
     graph = StateGraph(CalculationState)

@@ -29,10 +29,12 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.agent.graph import CalculationInput
+from app.config import settings
 from app.db import async_session_factory, engine
 from app.domain.numbers import format_money
 from app.errors import AppError
 from app.ingestion.pipeline import IngestionPipeline
+from app.llm.cache import with_response_cache
 from app.llm.client import build_llm_clients
 from app.llm.embeddings import build_embedder
 from app.llm.resilience import LLMConfigurationError, ResiliencePolicy
@@ -53,13 +55,17 @@ async def main(refresh: bool, only_json: bool, case_filter: str | None) -> int:
     policy = ResiliencePolicy.from_settings()
     try:
         llm, compile_llm = build_llm_clients(policy)
+        llm = with_response_cache(llm, async_session_factory)
+        compile_llm = with_response_cache(compile_llm, async_session_factory)
         embedder = build_embedder(policy)
     except LLMConfigurationError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     rulebook = RulebookService(async_session_factory, compile_llm, embedder)
     service = CalculationService(async_session_factory, llm, rulebook)
-    ingestion = IngestionPipeline(async_session_factory, compile_llm, embedder)
+    ingestion = IngestionPipeline(
+        async_session_factory, compile_llm, embedder, rulebooks_dir=settings.rulebooks_dir
+    )
 
     report = []
     all_passed = True
