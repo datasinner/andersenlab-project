@@ -1,8 +1,8 @@
 """Number handling shared by the rule engine and the grounding check.
 
-Tariff documents print numbers in many local styles: "30 960.46" (space as
-thousands separator, sometimes doubled by PDF extraction: "2  801.91"),
-"1,654.56", "0,65" (decimal comma), "1.234,56", "35%". Everything numeric in
+Tariff documents print numbers in many local styles: "12 345.67" (space as
+thousands separator, sometimes doubled by PDF extraction: "4  512.30"),
+"1,234.50", "0,75" (decimal comma), "1.234,56", "35%". Everything numeric in
 the system goes through parse_number so that "the same number" means the
 same thing everywhere.
 """
@@ -33,7 +33,7 @@ def parse_number(value: str | int | Decimal) -> Decimal:
     """Parse one number as printed in a tariff document.
 
     A single "." is a decimal point and a single "," followed by exactly
-    three digits is a thousands separator ("1,654" is 1654, "0,65" is 0.65).
+    three digits is a thousands separator ("1,234" is 1234, "0,75" is 0.75).
     When both appear, whichever comes last is the decimal separator.
     """
     if isinstance(value, Decimal):
@@ -72,8 +72,8 @@ def parse_number(value: str | int | Decimal) -> Decimal:
 def extract_numbers(text: str) -> set[Decimal]:
     """Every number that could be read out of `text`.
 
-    Where spacing is ambiguous ("Up to 2 000 0.50" could be 2000 and 0.50, or
-    2, 0 and 0.50) all readings are included. The grounding check only asks
+    Where spacing is ambiguous ("Up to 3 000 0.75" could be 3000 and 0.75, or
+    3, 0 and 0.75) all readings are included. The grounding check only asks
     "does this number appear?", so a generous superset is the safe side.
     """
     numbers: set[Decimal] = set()

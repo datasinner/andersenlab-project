@@ -191,7 +191,7 @@ class Tier(_Model):
 
 class TieredFee(_Component):
     """Marginal tiers: each slice of the quantity is charged at its own
-    rate ("first 17 700 tons at X, the following 17 600 tons at Y")."""
+    rate ("first 10 000 tons at X, the following 15 000 tons at Y")."""
 
     kind: Literal["tiered"]
     basis: Basis

@@ -20,6 +20,7 @@ COPY alembic.ini ./alembic.ini
 COPY migrations ./migrations
 COPY scripts ./scripts
 COPY data ./data
+COPY examples ./examples
 
 RUN uv sync --frozen --no-dev
 

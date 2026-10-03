@@ -4,11 +4,11 @@
   logical pages (ignoring a page number at either end of it, as in
   "Annual Tariffs 2024    15") is removed everywhere; one copy of each is kept in
   ParsedDocument.running_text, because it often states facts the document
-  profile needs ("Tariffs subject to VAT at 15%").
+  profile needs ("All charges exclude VAT at 10%").
 - Printed page numbers: a bare number in the top or bottom margin, or the
   number attached to a running header/footer, becomes the logical page's
   label instead of text.
-- Dot leaders ("Minimum fee………235.52") are shortened to a single ellipsis.
+- Dot leaders ("Minimum charge………150.00") are shortened to a single ellipsis.
 """
 
 import re

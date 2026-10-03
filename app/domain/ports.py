@@ -1,7 +1,7 @@
 """Matching a requested port name against the ports a tariff document covers.
 
-Port names are written many ways ("Durban", "Port of Durban", "Port
-Elizabeth / Ngqura", "Saldanha Bay"), so names are compared as sets of
+Port names are written many ways ("Northhaven", "Port of Northhaven", "West
+Quay / East Quay", "Southbay Harbour"), so names are compared as sets of
 words, ignoring generic words such as "port" and "of":
 1. an exact match on a name or alias wins;
 2. otherwise a port whose words contain all the requested words, or whose

@@ -141,7 +141,7 @@ class DocumentSection(Base):
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("document_section.id", ondelete="CASCADE")
     )
-    # The document's own numbering (e.g. "3.6"), or a generated "s-17" when
+    # The document's own numbering (e.g. "7.2"), or a generated "s-17" when
     # the document doesn't number its headings.
     ref: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
@@ -158,7 +158,7 @@ class DocumentSection(Base):
 # Full-text vector of a chunk. The breadcrumb (first paragraph) is weighted
 # above the body so a query naming a section outranks chunks that merely
 # repeat common words; "/" becomes a space because the parser otherwise reads
-# "TUGS/VESSEL" or "and/or" as one file-path token.
+# "MOORING/UNMOORING" or "and/or" as one file-path token.
 CHUNK_TSV_EXPRESSION = (
     "setweight(to_tsvector('english', translate(split_part(content, E'\\n\\n', 1), '/', ' ')), 'A')"
     " || setweight(to_tsvector('english', translate(content, '/', ' ')), 'B')"

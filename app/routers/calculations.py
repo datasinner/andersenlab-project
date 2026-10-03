@@ -1,8 +1,12 @@
+import json
 import uuid
+from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
 
 from app.agent.graph import CalculationInput
+from app.config import settings
 from app.dependencies import get_calculations
 from app.schemas import (
     AgentStepOut,
@@ -16,10 +20,22 @@ from app.services.calculations import CalculationService
 router = APIRouter(prefix="/v1/calculations", tags=["calculations"])
 
 
+def _openapi_examples() -> dict[str, Any]:
+    """Example requests for Swagger, from EXAMPLES_DIR (outside app/)."""
+    path = Path(settings.examples_dir) / "calculation_requests.json"
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+_EXAMPLES = _openapi_examples()
+
+
 @router.post("", response_model=CalculationOut)
 async def calculate(
-    body: CalculationRequest,
     request: Request,
+    body: CalculationRequest = Body(openapi_examples=_EXAMPLES),
     service: CalculationService = Depends(get_calculations),
 ) -> CalculationOut:
     """Price every charge the tariff sets for a vessel call.

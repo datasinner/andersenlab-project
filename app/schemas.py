@@ -122,30 +122,6 @@ class RulebookOut(BaseModel):
     rules: list[CompiledRuleOut]
 
 
-SUDESTADA_EXAMPLE = {
-    "port": "Durban",
-    "vessel": {
-        "vessel_metadata": {"name": "SUDESTADA", "built_year": 2010, "flag": "MLT - Malta"},
-        "technical_specs": {
-            "type": "Bulk Carrier",
-            "dwt": 93274,
-            "gross_tonnage": 51300,
-            "net_tonnage": 31192,
-            "loa_meters": 229.2,
-            "beam_meters": 38.0,
-            "draft_sw_s_w_t": [14.9, 0.0, 0.0],
-        },
-        "operational_data": {
-            "cargo_quantity_mt": 40000,
-            "days_alongside": 3.39,
-            "arrival_time": "2024-11-15T10:12:00",
-            "departure_time": "2024-11-22T13:00:00",
-            "activity": "Exporting Iron Ore",
-        },
-    },
-}
-
-
 class CalculationOverrides(BaseModel):
     num_services: int | None = Field(
         default=None, ge=0, description="Marine-service movements (default 2: entering + leaving)."
@@ -157,8 +133,6 @@ class CalculationOverrides(BaseModel):
 
 
 class CalculationRequest(BaseModel):
-    model_config = {"json_schema_extra": {"examples": [SUDESTADA_EXAMPLE]}}
-
     port: str | None = Field(default=None, max_length=100)
     vessel: dict[str, Any] | None = Field(
         default=None,

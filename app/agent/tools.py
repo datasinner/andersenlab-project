@@ -30,7 +30,7 @@ class SearchTariff(BaseModel):
 
 
 class ReadSection(BaseModel):
-    """Read one whole section of the tariff by its ref (e.g. "3.6"), including its tables,
+    """Read one whole section of the tariff by its ref (e.g. "7.2"), including its tables,
     and list its subsections."""
 
     ref: str

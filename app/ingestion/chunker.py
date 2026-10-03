@@ -3,8 +3,8 @@
 - One chunk per section, split at line boundaries once it passes
   MAX_CHUNK_CHARS (about 1,000 tokens).
 - Tables are never split. A table chunk carries the lines that introduce it,
-  because a table without its caption ("Per service based on vessel's
-  tonnage:") is hard to interpret.
+  because a table without its caption ("Charges per call, by length
+  overall:") is hard to interpret.
 - Definition sections are split per defined term ("“Act” means ...").
 - Every chunk starts with its section breadcrumb, so a chunk retrieved on
   its own still says where it comes from.

@@ -1,7 +1,7 @@
 """Cleaned pages → a tree of sections, each holding its content in order.
 
 Headings are recognised by numbering and typography, never by wording:
-- numbered: "3.6 TUGS/VESSEL ASSISTANCE", "4.1.1 PORT DUES" in bold or in a
+- numbered: "2.4 MOORING SERVICES", "5.1.2 HARBOUR DUES" in bold or in a
   font larger than the body;
 - keyword: "SECTION 3" / "PART 2" / "CHAPTER 1", with the bold lines that
   follow as its title;
@@ -12,8 +12,8 @@ and a date ("1 April 2024") never is.
 
 Numbered headings are placed under the nearest open heading whose number is
 a prefix of theirs. A number that doesn't fit the current context (a "2.1"
-inside section 5.2) is nested under the current section and gets a
-disambiguated ref ("5.2.2.1"); its siblings ("2.2") and children ("2.1.1")
+inside section 6.2) is nested under the current section and gets a
+disambiguated ref ("6.2.1.3"); its siblings ("1.4") and children ("1.3.1")
 follow it there, so refs stay unique within a document.
 """
 
@@ -50,7 +50,7 @@ class PlacedElement:
 class Section:
     ordinal: int
     ref: str
-    title: str  # the heading as printed, e.g. "3.6 TUGS/VESSEL ASSISTANCE"
+    title: str  # the heading as printed, e.g. "2.4 MOORING SERVICES"
     level: int
     parent: "Section | None"
     kind: SectionKind
@@ -201,7 +201,7 @@ class _Builder:
                 parent = self._rebase_parent()
             if parent is not None and not (parent.number and _extends(parent.number, number)):
                 # The number doesn't continue its parent's numbering (a "2.1"
-                # inside 5.2, or a child of such a heading): re-base the ref.
+                # inside 6.2, or a child of such a heading): re-base the ref.
                 local_number, number = number, None
                 if parent.local_number and _extends(parent.local_number, local_number):
                     printed_prefix = ".".join(str(part) for part in parent.local_number)

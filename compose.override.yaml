@@ -6,6 +6,7 @@ services:
       - ./alembic.ini:/app/alembic.ini
       - ./scripts:/app/scripts
       - ./data:/app/data
+      - ./examples:/app/examples
     environment:
       UVICORN_WORKERS: "1"
       UVICORN_RELOAD: "true"

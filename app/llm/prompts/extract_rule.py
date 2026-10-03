@@ -33,7 +33,7 @@ allocated is not a multiplier unless the tariff says the fee is per tug.
 6. When a table has one column per port, use the requested port's column. If the port has no \
 column of its own, use the column for other or all other ports. Say which column you used in \
 notes.
-7. Size bands ("10 001 to 50 000: a base fee plus X per 100 tons above 10 000") are a banded \
+7. Size bands ("5 001 to 20 000: a base fee plus X per 100 tons above 5 000") are a banded \
 component with one band per row, listed by ascending lower bound; set the increment's "above" \
 to the threshold the tariff names.
 8. Successive slices at different rates ("the first 1 000 tons at X, the following 2 000 tons \
